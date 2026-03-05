@@ -890,14 +890,21 @@ class GatedDeltaNet(Module):
             return exported[name]["cls"].tp_import_split(local_context, exported[name], plan, split) \
                 if split and exported.get(name) else None
 
-        # Build kwargs with split head counts
-        kwargs = exported["kwargs"].copy()
+        # Explicitly construct with split head counts
+        kwargs = exported["kwargs"]
 
         module = GatedDeltaNet(
             config = None,
+            key = kwargs["key"],
+            layer_idx = kwargs["layer_idx"],
+            hidden_size = kwargs["hidden_size"],
+            k_head_dim = kwargs["k_head_dim"],
+            v_head_dim = kwargs["v_head_dim"],
             num_k_heads = num_k_heads,
             num_v_heads = num_v_heads,
-            **kwargs,
+            rms_norm_eps = kwargs["rms_norm_eps"],
+            conv_kernel_size = kwargs["conv_kernel_size"],
+            out_dtype = kwargs.get("out_dtype"),
             qkvz_proj = _import_split("qkvz_proj", qkvz_split),
             qkv_proj = _import_split("qkv_proj", qkv_split),
             z_proj = _import_split("z_proj", z_split),

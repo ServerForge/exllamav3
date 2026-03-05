@@ -203,18 +203,22 @@ def mp_model_forward(
     if p is not None:
         params["indexed_embeddings"] = recv_embeddings(consumer, p)
 
-    # Reconstruct recurrent states from shared memory
-    rs = params.get("recurrent_states")
-    if rs is not None:
+    # Reconstruct recurrent states: use metadata from params + local tensor data
+    # stored on this child process from previous calls
+    rs_meta = params.get("recurrent_states")
+    if rs_meta is not None:
         from ..modules.gated_delta_net import GDN_RecurrentState
+        tp_rs = local_context.get("tp_recurrent_states", {})
         reconstructed_rs = {}
-        for key, state_dict in rs.items():
+        for key, meta in rs_meta.items():
+            # Get locally stored partial tensors from previous forward pass
+            local_state = tp_rs.get(key, {})
             reconstructed_rs[key] = GDN_RecurrentState(
-                position=state_dict["position"],
-                positions=state_dict["positions"],
-                last_conv_state=consumer.recv(state_dict["last_conv_state"], cuda=True) if state_dict["last_conv_state"] is not None else None,
-                last_recurrent_state=consumer.recv(state_dict["last_recurrent_state"], cuda=True) if state_dict["last_recurrent_state"] is not None else None,
-                batched=state_dict["batched"],
+                position=meta["position"],
+                positions=meta["positions"],
+                last_conv_state=local_state.get("last_conv_state"),
+                last_recurrent_state=local_state.get("last_recurrent_state"),
+                batched=meta["batched"],
             )
         params["recurrent_states"] = reconstructed_rs
 
@@ -233,32 +237,39 @@ def mp_model_forward(
         if prefill and idx == last_kv_module_idx:
             backend.end_cpu_reduce_jobs()
             del params["prefill"]
-            return _collect_recurrent_states(params)
+            return _save_and_collect_recurrent_metadata(local_context, params)
 
     backend.end_cpu_reduce_jobs()
-    rs_result = _collect_recurrent_states(params)
-    if rs_result is not None:
-        return {"output": x, "recurrent_states": rs_result}
+    rs_meta_result = _save_and_collect_recurrent_metadata(local_context, params)
+    if rs_meta_result is not None:
+        return {"output": x, "recurrent_metadata": rs_meta_result}
     return x
 
 
-def _collect_recurrent_states(params: dict):
+def _save_and_collect_recurrent_metadata(local_context: dict, params: dict):
     """
-    Collect updated recurrent states from child process as CPU tensors
-    so they can be sent back through the pipe without IPC issues.
+    Save updated recurrent state tensors to local_context for reuse in
+    subsequent forward passes, and return only metadata (position info)
+    to the parent process.
     """
     rs = params.get("recurrent_states")
     if rs is None:
         return None
+    tp_rs = {}
     result = {}
     for key, state in rs.items():
+        # Store partial tensors locally on this child process
+        tp_rs[key] = {
+            "last_conv_state": state.last_conv_state,
+            "last_recurrent_state": state.last_recurrent_state,
+        }
+        # Return only metadata (no tensors) to parent
         result[key] = {
             "position": state.position,
             "positions": state.positions,
-            "last_conv_state": state.last_conv_state.cpu() if state.last_conv_state is not None else None,
-            "last_recurrent_state": state.last_recurrent_state.cpu() if state.last_recurrent_state is not None else None,
             "batched": state.batched,
         }
+    local_context["tp_recurrent_states"] = tp_rs
     return result
 
 

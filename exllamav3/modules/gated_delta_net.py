@@ -193,8 +193,8 @@ class GDN_RecurrentState(CacheableState):
         return GDN_RecurrentState(
             self.position,
             self.positions,
-            self.last_conv_state.cpu(),
-            self.last_recurrent_state.cpu()
+            self.last_conv_state.cpu() if self.last_conv_state is not None else None,
+            self.last_recurrent_state.cpu() if self.last_recurrent_state is not None else None,
         )
 
     @override
@@ -202,8 +202,8 @@ class GDN_RecurrentState(CacheableState):
         return GDN_RecurrentState(
             self.position,
             self.positions,
-            self.last_conv_state.to(device, non_blocking = True),
-            self.last_recurrent_state.to(device, non_blocking = True),
+            self.last_conv_state.to(device, non_blocking = True) if self.last_conv_state is not None else None,
+            self.last_recurrent_state.to(device, non_blocking = True) if self.last_recurrent_state is not None else None,
         )
 
     @override

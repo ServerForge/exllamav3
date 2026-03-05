@@ -305,6 +305,9 @@ class GatedDeltaNet(Module):
         super().__init__(config, key, None)
         self.module_name = "GatedDeltaNet"
 
+        import sys
+        print(f"[GDN Init] Creating GatedDeltaNet {key} with k_heads={num_k_heads}, v_heads={num_v_heads}", file=sys.stderr, flush=True)
+
         self.layer_idx = layer_idx
         self.hidden_size = hidden_size
         self.k_head_dim = k_head_dim

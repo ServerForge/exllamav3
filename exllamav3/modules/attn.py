@@ -15,28 +15,28 @@ from ..util import profile_opt
 
 """
 SDPA:
-    
+
     attn_mode: "sdpa_nc"
     position (optional, default = 0): int *OR*
     positions: shape (bsz) *OR*
-    position_ids: shape (bsz, seq_len)    
+    position_ids: shape (bsz, seq_len)
     - no cache
     - no chunking
     - batch shape is determined by shape of input_ids
     - no logit softcap support (Gemma)
-                    
+
 Flash Attention:
-                
+
     attn_mode: "flash_attn"
     batch_shape: tuple of (bsz, max_seq_len)
     cache: Cache with capacity of at least bsz*max_seq_len tokens
     past_len: int, *OR*
-    cache_seqlens: shape (bsz) 
+    cache_seqlens: shape (bsz)
     position: int (overrides past_len for position emb)
     positions: shape (bsz) (overrides cache_seqlens for position emb) *OR*
     position_ids: shape (bsz, seq_len) (overrides cache_seqlens for position emb)
     - max_seq_len must be divisible by 256
-    
+
     attn_mode: "flash_attn"
     block_table: list of page indices, shape (bsz, pages_per_seq)
     cache: Paged cache
@@ -47,7 +47,7 @@ Flash Attention:
     attn_mode: "flash_attn_nc"
     position (optional, default = 0): int *OR*
     positions: shape (bsz) *OR*
-    position_ids: shape (bsz, seq_len)    
+    position_ids: shape (bsz, seq_len)
     - no cache
     - no chunking
     - batch shape is determined by shape of input_ids
@@ -323,9 +323,11 @@ class Attention(Module):
             self.multi_kv = MultiLinear(self. device, [self.k_proj, self.v_proj])
 
         # Head norm
+        # Only set norm tensors if not using TP with split norms (which would have incorrect size)
         if self.q_norm and isinstance(self.q_norm, RMSNorm) and not self.q_norm.span_heads:
-            self.q_norm_tensor = self.q_norm.weight.data
-            self.k_norm_tensor = self.k_norm.weight.data
+            if not (self.tp_reduce and self.tp_split_norm and not self.tp_span_heads_norm):
+                self.q_norm_tensor = self.q_norm.weight.data
+                self.k_norm_tensor = self.k_norm.weight.data
 
 
     @override
@@ -881,6 +883,11 @@ class Attention(Module):
             module.tp_span_heads_norm = True
             module.q_global_dim = exported.get("q_global_dim", 0)
             module.k_global_dim = exported.get("k_global_dim", 0)
+        elif tp_split_norm and exported.get("q_norm"):
+            # When using TP with split norms (non-span_heads), don't pass norm tensors to rope
+            # since they have incorrect size after splitting. Norm will be applied via forward().
+            module.q_norm_tensor = None
+            module.k_norm_tensor = None
 
         module.load_local(device)
         torch.cuda.synchronize()

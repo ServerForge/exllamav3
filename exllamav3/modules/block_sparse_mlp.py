@@ -532,25 +532,36 @@ class BlockSparseMLP(Module):
         bsz = y.shape[0]
         bc_sh_exp = False
 
-        # Routing
-        if self.routing_gate is not None:
-            print(f"[MLP Device {device_id}] Computing routing", file=sys.stderr, flush=True)
-            selected_experts, routing_weights = self.routing_fn(bsz, self.routing_cfg, y, params)
-        else:
-            print(f"[MLP Device {device_id}] No routing gate, creating receive buffers for broadcast", file=sys.stderr, flush=True)
-            # Create properly sized tensors to receive broadcast from routing_device
-            selected_experts = torch.empty((bsz, self.num_experts_per_tok), dtype = torch.long, device = y.device)
-            routing_weights = torch.empty((bsz, self.num_experts_per_tok), dtype = torch.half, device = y.device)
-
-        # Broadcast routing indices and weights
+        # Routing and broadcast
         if self.routing_device is not None:
-            print(f"[MLP Device {device_id}] Synchronizing before broadcast", file=sys.stderr, flush=True)
-            params["backend"].fwd_barrier()
-            print(f"[MLP Device {device_id}] Broadcasting selected_experts from routing_device {self.routing_device}", file=sys.stderr, flush=True)
-            params["backend"].broadcast(selected_experts, src_device = self.routing_device)
-            print(f"[MLP Device {device_id}] Broadcast selected_experts complete", file=sys.stderr, flush=True)
-            params["backend"].broadcast(routing_weights, src_device = self.routing_device)
-            print(f"[MLP Device {device_id}] Broadcast routing_weights complete", file=sys.stderr, flush=True)
+            if self.routing_gate is not None:
+                # Routing device: compute routing first, then broadcast
+                print(f"[MLP Device {device_id}] Computing routing", file=sys.stderr, flush=True)
+                selected_experts, routing_weights = self.routing_fn(bsz, self.routing_cfg, y, params)
+                print(f"[MLP Device {device_id}] Broadcasting selected_experts", file=sys.stderr, flush=True)
+                params["backend"].broadcast(selected_experts, src_device = self.routing_device)
+                print(f"[MLP Device {device_id}] Broadcasting routing_weights", file=sys.stderr, flush=True)
+                params["backend"].broadcast(routing_weights, src_device = self.routing_device)
+                print(f"[MLP Device {device_id}] Broadcasts complete", file=sys.stderr, flush=True)
+            else:
+                # Non-routing devices: create receive buffers and wait for broadcast
+                print(f"[MLP Device {device_id}] Creating receive buffers", file=sys.stderr, flush=True)
+                selected_experts = torch.empty((bsz, self.num_experts_per_tok), dtype = torch.long, device = y.device)
+                routing_weights = torch.empty((bsz, self.num_experts_per_tok), dtype = torch.half, device = y.device)
+                print(f"[MLP Device {device_id}] Waiting for selected_experts broadcast", file=sys.stderr, flush=True)
+                params["backend"].broadcast(selected_experts, src_device = self.routing_device)
+                print(f"[MLP Device {device_id}] Got selected_experts", file=sys.stderr, flush=True)
+                params["backend"].broadcast(routing_weights, src_device = self.routing_device)
+                print(f"[MLP Device {device_id}] Got routing_weights", file=sys.stderr, flush=True)
+        else:
+            # No routing device specified, compute locally if we have the gate
+            if self.routing_gate is not None:
+                print(f"[MLP Device {device_id}] Computing routing (no broadcast)", file=sys.stderr, flush=True)
+                selected_experts, routing_weights = self.routing_fn(bsz, self.routing_cfg, y, params)
+            else:
+                print(f"[MLP Device {device_id}] Creating empty routing tensors", file=sys.stderr, flush=True)
+                selected_experts = torch.empty((bsz, self.num_experts_per_tok), dtype = torch.long, device = y.device)
+                routing_weights = torch.empty((bsz, self.num_experts_per_tok), dtype = torch.half, device = y.device)
 
         # Empty slice
         if self.intermediate_size == 0 or self.num_local_experts == 0:

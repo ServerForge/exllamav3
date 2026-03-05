@@ -371,8 +371,8 @@ class Qwen3_5BaseModel(Model):
         # Mark that we need recurrent cache for generation
         self.caps.update({"recurrent_states": True})
 
-        # TP for this architecture is not implemented yet
-        self.caps.update({"supports_tp": False})
+        # TP support enabled for linear attention layers
+        self.caps.update({"supports_tp": True})
 
         # Generator needs MRoPE freqs when using MMEmbeddings
         self.caps.update({"mrope": True})

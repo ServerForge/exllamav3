@@ -553,14 +553,20 @@ class GatedDeltaNet(Module):
         params: dict,
         out_dtype: torch.dtype | None = None
     ) -> torch.Tensor:
+        import sys
+        device_id = x.device.index if hasattr(x.device, 'index') else 'cpu'
 
         # Handle zero heads in TP mode (some workers may get 0 heads when splitting)
         if self.num_k_heads == 0:
+            print(f"[GDN Device {device_id}] Zero heads - returning zeros", file=sys.stderr, flush=True)
             x = torch.zeros_like(x, dtype = self.out_dtype)
             if self.tp_reduce:
+                print(f"[GDN Device {device_id}] Calling all_reduce with zero contribution", file=sys.stderr, flush=True)
                 params["backend"].all_reduce(x, False)
+            print(f"[GDN Device {device_id}] Zero heads path complete", file=sys.stderr, flush=True)
             return to2(x, out_dtype, self.out_dtype)
 
+        print(f"[GDN Device {device_id}] Starting forward pass (k_heads={self.num_k_heads}, v_heads={self.num_v_heads})", file=sys.stderr, flush=True)
         bsz, seqlen, _ = x.shape
 
         # Previous state
@@ -728,10 +734,15 @@ class GatedDeltaNet(Module):
             else:
                 rs.positions = [r + seqlen for r in rs.positions]
 
+        print(f"[GDN Device {device_id}] Forward pass complete, preparing TP reduction", file=sys.stderr, flush=True)
+
         # TP reduction
         if self.tp_reduce:
+            print(f"[GDN Device {device_id}] Calling all_reduce", file=sys.stderr, flush=True)
             params["backend"].all_reduce(x)
+            print(f"[GDN Device {device_id}] all_reduce complete", file=sys.stderr, flush=True)
 
+        print(f"[GDN Device {device_id}] Returning from forward", file=sys.stderr, flush=True)
         return to2(x, out_dtype, self.out_dtype)
 
 

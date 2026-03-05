@@ -240,6 +240,13 @@ def mp_model_forward(
             params["prefill"] = (idx == last_kv_module_idx)
         x = module.prepare_for_device(x, params)
         x = module.forward(x, params)
+        # Diagnostic: checksum after each module
+        import sys
+        if idx < 6:
+            xf = x.float() if x is not None else None
+            cs = xf.sum().item() if xf is not None else 0.0
+            mn = xf.mean().item() if xf is not None else 0.0
+            print(f"[TP diag] dev={device} idx={idx} mod={module.__class__.__name__} shape={tuple(x.shape) if x is not None else None} sum={cs:.4f} mean={mn:.6f}", file=sys.stderr, flush=True)
         if prefill and idx == last_kv_module_idx:
             backend.end_cpu_reduce_jobs()
             del params["prefill"]

@@ -323,11 +323,9 @@ class Attention(Module):
             self.multi_kv = MultiLinear(self. device, [self.k_proj, self.v_proj])
 
         # Head norm
-        # Only set norm tensors if not using TP with split norms (which would have incorrect size)
         if self.q_norm and isinstance(self.q_norm, RMSNorm) and not self.q_norm.span_heads:
-            if not (self.tp_reduce and self.tp_split_norm and not self.tp_span_heads_norm):
-                self.q_norm_tensor = self.q_norm.weight.data
-                self.k_norm_tensor = self.k_norm.weight.data
+            self.q_norm_tensor = self.q_norm.weight.data
+            self.k_norm_tensor = self.k_norm.weight.data
 
 
     @override
@@ -850,13 +848,17 @@ class Attention(Module):
             return exported[name]["cls"].tp_import_split(local_context, exported[name], plan, split) \
                 if split and exported.get(name) else None
 
+        # When span_heads=False, norm weight is (head_dim,) shared across all heads,
+        # so it should NOT be split. Only span_heads=True norms need splitting.
+        split_norm = tp_split_norm and q_norm_span_heads
+
         module = Attention(
             config = None,
             **exported["kwargs"],
             num_q_heads = num_q_heads,
             num_kv_heads = num_kv_heads,
-            q_norm = _import_split("q_norm", norm_q_split) if tp_split_norm else _import("q_norm"),
-            k_norm = _import_split("k_norm", norm_k_split) if tp_split_norm else _import("k_norm"),
+            q_norm = _import_split("q_norm", norm_q_split) if split_norm else _import("q_norm"),
+            k_norm = _import_split("k_norm", norm_k_split) if split_norm else _import("k_norm"),
             q_proj = _import_split("q_proj", q_split),
             k_proj = _import_split("k_proj", kv_split),
             v_proj = _import_split("v_proj", kv_split),
@@ -883,11 +885,6 @@ class Attention(Module):
             module.tp_span_heads_norm = True
             module.q_global_dim = exported.get("q_global_dim", 0)
             module.k_global_dim = exported.get("k_global_dim", 0)
-        elif tp_split_norm and exported.get("q_norm"):
-            # When using TP with split norms (non-span_heads), don't pass norm tensors to rope
-            # since they have incorrect size after splitting. Norm will be applied via forward().
-            module.q_norm_tensor = None
-            module.k_norm_tensor = None
 
         module.load_local(device)
         torch.cuda.synchronize()

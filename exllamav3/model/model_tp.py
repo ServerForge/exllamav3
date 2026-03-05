@@ -364,7 +364,9 @@ class Model_TPMixin:
             params["indexed_embeddings"] = send_embeddings(self.tp_producer, p)
 
         # Share recurrent states (GDN_RecurrentState objects containing CUDA tensors)
-        rs = params.get("recurrent_states")
+        # Save original states so we can update them after forward pass
+        self._original_recurrent_states = params.get("recurrent_states")
+        rs = self._original_recurrent_states
         if rs is not None:
             shared_rs = {}
             for key, state in rs.items():
@@ -378,6 +380,50 @@ class Model_TPMixin:
             params["recurrent_states"] = shared_rs
 
         return self.tp_producer.send(x)
+
+
+    def _gather_recurrent_states(self, partial_states_list: list):
+        """
+        Gather partial recurrent states from all TP devices and reconstruct
+        full GDN_RecurrentState objects by concatenating along the head dimension.
+        Updates the original recurrent state objects in-place.
+        """
+        original_rs = self._original_recurrent_states
+        if original_rs is None:
+            return
+
+        # Filter out None results (devices with no recurrent states)
+        valid_partials = [p for p in partial_states_list if p is not None]
+        if not valid_partials:
+            return
+
+        from ..modules.gated_delta_net import GDN_RecurrentState
+
+        for layer_key in original_rs:
+            state = original_rs[layer_key]
+            # Gather partial states from all devices for this layer
+            partials = [p[layer_key] for p in valid_partials if layer_key in p]
+            if not partials:
+                continue
+
+            # Use metadata from first partial (position, batched are the same across devices)
+            state.position = partials[0]["position"]
+            state.positions = partials[0]["positions"]
+            state.batched = partials[0]["batched"]
+
+            # Concatenate conv_state along channel dim (dim=1): (bsz, local_fdim_qkv, conv_kernel_size)
+            conv_parts = [p["last_conv_state"] for p in partials if p["last_conv_state"] is not None]
+            if conv_parts:
+                state.last_conv_state = torch.cat(conv_parts, dim=1)
+            else:
+                state.last_conv_state = None
+
+            # Concatenate recurrent_state along head dim (dim=1): (bsz, local_v_heads, k_head_dim, v_head_dim)
+            rec_parts = [p["last_recurrent_state"] for p in partials if p["last_recurrent_state"] is not None]
+            if rec_parts:
+                state.last_recurrent_state = torch.cat(rec_parts, dim=1)
+            else:
+                state.last_recurrent_state = None
 
 
     def prefill_tp(
@@ -397,9 +443,12 @@ class Model_TPMixin:
                 last_kv_module_idx,
                 True
             ))
+        partial_states_list = []
         for device in self.active_devices:
             r = self.tp_worker_result(device)
-            assert r is None, "TP logic error"
+            partial_states_list.append(r)
+
+        self._gather_recurrent_states(partial_states_list)
 
         self.tp_worker_result(-1)
         return None
@@ -423,11 +472,26 @@ class Model_TPMixin:
                 False
             ))
         return_tensors = []
+        partial_states_list = []
         for device in self.active_devices:
             r = self.tp_worker_result(device)
-            if r is not None:
+            if r is None:
+                # Non-output device, no recurrent states
+                pass
+            elif isinstance(r, dict) and "recurrent_states" in r:
+                # Device returned recurrent states (and possibly output)
+                partial_states_list.append(r["recurrent_states"])
+                if r.get("output") is not None:
+                    return_tensors.append(r["output"])
+            elif isinstance(r, torch.Tensor):
+                # Output tensor without recurrent states
                 return_tensors.append(r)
+            else:
+                # Prefill path: just recurrent states dict
+                partial_states_list.append(r)
         assert len(return_tensors) == 1, "TP logic error"
+
+        self._gather_recurrent_states(partial_states_list)
 
         self.tp_worker_result(-1)
         return return_tensors[0]

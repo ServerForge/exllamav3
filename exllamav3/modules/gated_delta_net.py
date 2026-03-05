@@ -962,10 +962,10 @@ class GatedDeltaNet(Module):
         else:
             module.conv1d_bias = conv1d_bias
 
-        module.load_local(device)
-
         if not kwargs.get("skip_reduction"):
             module.tp_reduce = True
+
+        module.load_local(device)
 
         torch.cuda.synchronize()
         return module

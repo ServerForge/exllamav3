@@ -233,10 +233,33 @@ def mp_model_forward(
         if prefill and idx == last_kv_module_idx:
             backend.end_cpu_reduce_jobs()
             del params["prefill"]
-            return None
+            return _collect_recurrent_states(params)
 
     backend.end_cpu_reduce_jobs()
+    rs_result = _collect_recurrent_states(params)
+    if rs_result is not None:
+        return {"output": x, "recurrent_states": rs_result}
     return x
+
+
+def _collect_recurrent_states(params: dict):
+    """
+    Collect updated recurrent states from child process as CPU tensors
+    so they can be sent back through the pipe without IPC issues.
+    """
+    rs = params.get("recurrent_states")
+    if rs is None:
+        return None
+    result = {}
+    for key, state in rs.items():
+        result[key] = {
+            "position": state.position,
+            "positions": state.positions,
+            "last_conv_state": state.last_conv_state.cpu() if state.last_conv_state is not None else None,
+            "last_recurrent_state": state.last_recurrent_state.cpu() if state.last_recurrent_state is not None else None,
+            "batched": state.batched,
+        }
+    return result
 
 
 def mp_cache_page_copy(

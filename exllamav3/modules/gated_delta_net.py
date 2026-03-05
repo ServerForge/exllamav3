@@ -765,6 +765,9 @@ class GatedDeltaNet(Module):
 
 
     def make_tp_allocation(self, options: dict) -> list[TPAllocation]:
+        import sys
+        print(f"[GDN TP Alloc] make_tp_allocation called for {self.key} (k_heads={self.num_k_heads}, v_heads={self.num_v_heads})", file=sys.stderr, flush=True)
+
         storage = 0
         if self.qkvz_proj is not None:
             storage += self.qkvz_proj.storage_size()
@@ -821,6 +824,7 @@ class GatedDeltaNet(Module):
             channels_to_split = channels_to_split,
             limit_key = "attn"
         )
+        print(f"[GDN TP Alloc] Returning TPAllocation: channels_to_split={channels_to_split}, channel_width={channel_width}", file=sys.stderr, flush=True)
         return [tpa]
 
 

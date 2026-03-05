@@ -550,6 +550,13 @@ class GatedDeltaNet(Module):
         out_dtype: torch.dtype | None = None
     ) -> torch.Tensor:
 
+        # Handle zero heads in TP mode (some workers may get 0 heads when splitting)
+        if self.num_k_heads == 0:
+            x = torch.zeros_like(x, dtype = self.out_dtype)
+            if self.tp_reduce:
+                params["backend"].all_reduce(x, False)
+            return to2(x, out_dtype, self.out_dtype)
+
         bsz, seqlen, _ = x.shape
 
         # Previous state

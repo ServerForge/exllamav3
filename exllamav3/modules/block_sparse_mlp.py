@@ -524,9 +524,6 @@ class BlockSparseMLP(Module):
         params: dict,
         out_dtype: torch.dtype | None = None
     ) -> torch.Tensor:
-        import sys
-        device_id = x.device.index if hasattr(x.device, 'index') else 'cpu'
-        print(f"[MLP Device {device_id}] Starting forward, routing_device={self.routing_device}", file=sys.stderr, flush=True)
 
         y = x.view(-1, self.hidden_size)
         bsz = y.shape[0]
@@ -536,30 +533,20 @@ class BlockSparseMLP(Module):
         if self.routing_device is not None:
             if self.routing_gate is not None:
                 # Routing device: compute routing first, then broadcast
-                print(f"[MLP Device {device_id}] Computing routing", file=sys.stderr, flush=True)
                 selected_experts, routing_weights = self.routing_fn(bsz, self.routing_cfg, y, params)
-                print(f"[MLP Device {device_id}] Broadcasting selected_experts", file=sys.stderr, flush=True)
                 params["backend"].broadcast(selected_experts, src_device = self.routing_device)
-                print(f"[MLP Device {device_id}] Broadcasting routing_weights", file=sys.stderr, flush=True)
                 params["backend"].broadcast(routing_weights, src_device = self.routing_device)
-                print(f"[MLP Device {device_id}] Broadcasts complete", file=sys.stderr, flush=True)
             else:
                 # Non-routing devices: create receive buffers and wait for broadcast
-                print(f"[MLP Device {device_id}] Creating receive buffers", file=sys.stderr, flush=True)
                 selected_experts = torch.empty((bsz, self.num_experts_per_tok), dtype = torch.long, device = y.device)
                 routing_weights = torch.empty((bsz, self.num_experts_per_tok), dtype = torch.half, device = y.device)
-                print(f"[MLP Device {device_id}] Waiting for selected_experts broadcast", file=sys.stderr, flush=True)
                 params["backend"].broadcast(selected_experts, src_device = self.routing_device)
-                print(f"[MLP Device {device_id}] Got selected_experts", file=sys.stderr, flush=True)
                 params["backend"].broadcast(routing_weights, src_device = self.routing_device)
-                print(f"[MLP Device {device_id}] Got routing_weights", file=sys.stderr, flush=True)
         else:
             # No routing device specified, compute locally if we have the gate
             if self.routing_gate is not None:
-                print(f"[MLP Device {device_id}] Computing routing (no broadcast)", file=sys.stderr, flush=True)
                 selected_experts, routing_weights = self.routing_fn(bsz, self.routing_cfg, y, params)
             else:
-                print(f"[MLP Device {device_id}] Creating empty routing tensors", file=sys.stderr, flush=True)
                 selected_experts = torch.empty((bsz, self.num_experts_per_tok), dtype = torch.long, device = y.device)
                 routing_weights = torch.empty((bsz, self.num_experts_per_tok), dtype = torch.half, device = y.device)
 
@@ -778,16 +765,12 @@ class BlockSparseMLP(Module):
                 final_hidden_states += y
 
         # Output reduction
-        print(f"[MLP Device {device_id}] Preparing output reduction, tp_reduce={self.tp_reduce}", file=sys.stderr, flush=True)
         if self.tp_reduce:
-            print(f"[MLP Device {device_id}] Calling all_reduce", file=sys.stderr, flush=True)
             params["backend"].all_reduce(
                 final_hidden_states,
                 (self.intermediate_size > 0 and self.num_local_experts > 0) or bool(self.shared_experts)
             )
-            print(f"[MLP Device {device_id}] all_reduce complete", file=sys.stderr, flush=True)
 
-        print(f"[MLP Device {device_id}] Returning from forward", file=sys.stderr, flush=True)
         return final_hidden_states
 
 

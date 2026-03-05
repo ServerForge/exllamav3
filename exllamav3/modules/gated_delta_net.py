@@ -305,9 +305,6 @@ class GatedDeltaNet(Module):
         super().__init__(config, key, None)
         self.module_name = "GatedDeltaNet"
 
-        import sys
-        print(f"[GDN Init] Creating GatedDeltaNet {key} with k_heads={num_k_heads}, v_heads={num_v_heads}", file=sys.stderr, flush=True)
-
         self.layer_idx = layer_idx
         self.hidden_size = hidden_size
         self.k_head_dim = k_head_dim
@@ -556,20 +553,13 @@ class GatedDeltaNet(Module):
         params: dict,
         out_dtype: torch.dtype | None = None
     ) -> torch.Tensor:
-        import sys
-        device_id = x.device.index if hasattr(x.device, 'index') else 'cpu'
 
         # Handle zero heads in TP mode (some workers may get 0 heads when splitting)
         if self.num_k_heads == 0:
-            print(f"[GDN Device {device_id}] Zero heads - returning zeros", file=sys.stderr, flush=True)
             x = torch.zeros_like(x, dtype = self.out_dtype)
             if self.tp_reduce:
-                print(f"[GDN Device {device_id}] Calling all_reduce with zero contribution", file=sys.stderr, flush=True)
                 params["backend"].all_reduce(x, False)
-            print(f"[GDN Device {device_id}] Zero heads path complete", file=sys.stderr, flush=True)
             return to2(x, out_dtype, self.out_dtype)
-
-        print(f"[GDN Device {device_id}] Starting forward pass (k_heads={self.num_k_heads}, v_heads={self.num_v_heads})", file=sys.stderr, flush=True)
         bsz, seqlen, _ = x.shape
 
         # Previous state
@@ -737,15 +727,10 @@ class GatedDeltaNet(Module):
             else:
                 rs.positions = [r + seqlen for r in rs.positions]
 
-        print(f"[GDN Device {device_id}] Forward pass complete, preparing TP reduction", file=sys.stderr, flush=True)
-
         # TP reduction
         if self.tp_reduce:
-            print(f"[GDN Device {device_id}] Calling all_reduce", file=sys.stderr, flush=True)
             params["backend"].all_reduce(x)
-            print(f"[GDN Device {device_id}] all_reduce complete", file=sys.stderr, flush=True)
 
-        print(f"[GDN Device {device_id}] Returning from forward", file=sys.stderr, flush=True)
         return to2(x, out_dtype, self.out_dtype)
 
 
@@ -768,8 +753,6 @@ class GatedDeltaNet(Module):
 
 
     def make_tp_allocation(self, options: dict) -> list[TPAllocation]:
-        import sys
-        print(f"[GDN TP Alloc] make_tp_allocation called for {self.key} (k_heads={self.num_k_heads}, v_heads={self.num_v_heads})", file=sys.stderr, flush=True)
 
         storage = 0
         if self.qkvz_proj is not None:
@@ -827,7 +810,6 @@ class GatedDeltaNet(Module):
             channels_to_split = channels_to_split,
             limit_key = "attn"
         )
-        print(f"[GDN TP Alloc] Returning TPAllocation: channels_to_split={channels_to_split}, channel_width={channel_width}", file=sys.stderr, flush=True)
         return [tpa]
 
 
@@ -887,8 +869,6 @@ class GatedDeltaNet(Module):
 
         num_k_heads = last - first
         num_v_heads = num_k_heads * num_v_groups
-
-        print(f"[GDN TP Import] Importing {key} on device {device}: first={first}, last={last}, num_k_heads={num_k_heads}, num_v_heads={num_v_heads}", file=sys.stderr, flush=True)
 
         k_dim = k_head_dim * num_k_heads
         v_dim = v_head_dim * num_v_heads

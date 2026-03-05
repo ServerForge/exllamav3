@@ -778,6 +778,7 @@ class Attention(Module):
                 "logit_softcapping": self.logit_softcapping,
                 "post_rope_norm": self.post_rope_norm,
                 "tp_split_norm": self.tp_split_norm,
+                "interleaved_gate": self.interleaved_gate,
             },
             "num_kv_heads": self.num_kv_heads,
             **{name: _export(getattr(self, name, None)) for name in (
@@ -809,12 +810,15 @@ class Attention(Module):
         n_gqa = exported["n_gqa"]
         device = local_context["device"]
         tp_split_norm = exported["kwargs"]["tp_split_norm"]
+        interleaved_gate = exported["kwargs"].get("interleaved_gate", False)
         first, last, unit = plan[key]
         assert unit == "heads"
         num_kv_heads = last - first
         num_q_heads = num_kv_heads * n_gqa
 
-        q_split = (True, first * head_dim * n_gqa, last * head_dim * n_gqa) \
+        # With interleaved_gate, q_proj output is 2x (q + gate interleaved)
+        q_gate_factor = 2 if interleaved_gate else 1
+        q_split = (True, first * head_dim * n_gqa * q_gate_factor, last * head_dim * n_gqa * q_gate_factor) \
             if num_kv_heads else None
         qh_split = (True, first * n_gqa, last * n_gqa) \
             if num_kv_heads else None

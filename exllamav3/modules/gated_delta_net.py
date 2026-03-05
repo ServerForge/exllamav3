@@ -439,7 +439,8 @@ class GatedDeltaNet(Module):
             self.o_proj is not None and self.o_proj.quant_format_id() == "exl3"
         )
 
-        if is_quantized:
+        # Skip bound class in TP mode - it's incompatible with split tensors
+        if is_quantized and not self.tp_reduce:
             self.bsz1_pa_args = [
                 (device, (1, self.fdim_qkv, 1), torch.bfloat16),
                 (device, (1, 1, self.num_v_heads, self.v_head_dim), torch.bfloat16, "a"),

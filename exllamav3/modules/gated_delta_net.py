@@ -26,6 +26,11 @@ def causal_conv1d_update_function_torch(
     state_len = conv_state.shape[-1]
     groups = weight.shape[0]  # Use weight shape for TP compatibility
 
+    # Slice input to match split weight in TP mode
+    if dim != groups:
+        x = x[:, :groups, :]
+        conv_state = conv_state[:, :groups, :]
+
     y = torch.cat([conv_state, x], dim = -1).to(weight.dtype)
     conv_state.copy_(y[:, :, -state_len:])
     y = F.conv1d(y, weight.unsqueeze(1), bias, padding = 0, groups = groups)
@@ -43,6 +48,11 @@ def causal_conv1d_fwd_function_torch(
     # as the initial state
     bsz, dim, seq_len = x.shape
     groups = weight.shape[0]  # Use weight shape for TP compatibility
+
+    # Slice input to match split weight in TP mode
+    if dim != groups:
+        x = x[:, :groups, :]
+
     zero_state = torch.zeros((bsz, groups, weight.shape[-1]), dtype = x.dtype, device = x.device)
 
     y = torch.cat([zero_state, x], dim = -1).to(weight.dtype)

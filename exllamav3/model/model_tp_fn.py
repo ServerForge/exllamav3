@@ -240,16 +240,6 @@ def mp_model_forward(
             params["prefill"] = (idx == last_kv_module_idx)
         x = module.prepare_for_device(x, params)
         x = module.forward(x, params)
-        # Diagnostic: checksum after each module (only first decode call, first 3 modules)
-        import sys
-        if not prefill and not local_context.get("_diag_done") and idx < 3:
-            _dev = local_context["device"]
-            xf = x.float() if x is not None else None
-            cs = xf.sum().item() if xf is not None else 0.0
-            mn = xf.mean().item() if xf is not None else 0.0
-            print(f"[TP diag] dev={_dev} idx={idx} mod={module.__class__.__name__} shape={tuple(x.shape) if x is not None else None} sum={cs:.4f} mean={mn:.6f}", file=sys.stderr, flush=True)
-            if idx == 2:
-                local_context["_diag_done"] = True
         if prefill and idx == last_kv_module_idx:
             backend.end_cpu_reduce_jobs()
             del params["prefill"]
@@ -257,6 +247,19 @@ def mp_model_forward(
 
     backend.end_cpu_reduce_jobs()
     rs_meta_result = _save_and_collect_recurrent_metadata(local_context, params)
+
+    # Diagnostic: print top-5 logit tokens on first 3 decode steps (output device only)
+    import sys
+    _dev = local_context["device"]
+    _diag_count = local_context.get("_diag_decode_count", 0)
+    if not prefill and x is not None and _diag_count < 3:
+        local_context["_diag_decode_count"] = _diag_count + 1
+        try:
+            topk = x[0, -1].float().topk(5)
+            print(f"[TP diag] dev={_dev} decode#{_diag_count} top5_ids={topk.indices.tolist()} top5_vals={[f'{v:.2f}' for v in topk.values.tolist()]} shape={tuple(x.shape)}", file=sys.stderr, flush=True)
+        except Exception as e:
+            print(f"[TP diag] dev={_dev} decode#{_diag_count} diag error: {e}", file=sys.stderr, flush=True)
+
     if rs_meta_result is not None:
         return {"output": x, "recurrent_metadata": rs_meta_result}
     return x

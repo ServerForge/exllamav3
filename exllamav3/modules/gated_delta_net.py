@@ -906,8 +906,22 @@ class GatedDeltaNet(Module):
         )
 
         module.device = device
-        module.a_log = consumer.recv(exported["a_log"], cuda = True)
-        module.dt_bias = consumer.recv(exported["dt_bias"], cuda = True)
+
+        # Split dt_bias and a_log according to value heads
+        dt_bias_full = consumer.recv(exported["dt_bias"], cuda = True)
+        a_log_full = consumer.recv(exported["a_log"], cuda = True)
+
+        v_head_split = (first * num_v_groups, last * num_v_groups) if num_k_heads else None
+
+        if v_head_split and dt_bias_full is not None:
+            module.dt_bias = dt_bias_full[v_head_split[0]:v_head_split[1]].contiguous()
+        else:
+            module.dt_bias = dt_bias_full
+
+        if v_head_split and a_log_full is not None:
+            module.a_log = a_log_full[v_head_split[0]:v_head_split[1]].contiguous()
+        else:
+            module.a_log = a_log_full
 
         conv1d_weight = consumer.recv(exported["conv1d_weight"], cuda = True)
         if conv_split and conv1d_weight is not None:

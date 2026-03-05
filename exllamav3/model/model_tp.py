@@ -362,6 +362,20 @@ class Model_TPMixin:
         if p is not None:
             params["indexed_embeddings"] = send_embeddings(self.tp_producer, p)
 
+        # Share recurrent states (GDN_RecurrentState objects containing CUDA tensors)
+        rs = params.get("recurrent_states")
+        if rs is not None:
+            shared_rs = {}
+            for key, state in rs.items():
+                shared_rs[key] = {
+                    "position": state.position,
+                    "positions": state.positions,
+                    "last_conv_state": self.tp_producer.send(state.last_conv_state) if state.last_conv_state is not None else None,
+                    "last_recurrent_state": self.tp_producer.send(state.last_recurrent_state) if state.last_recurrent_state is not None else None,
+                    "batched": state.batched,
+                }
+            params["recurrent_states"] = shared_rs
+
         return self.tp_producer.send(x)
 
 

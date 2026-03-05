@@ -201,6 +201,21 @@ def mp_model_forward(
     if p is not None:
         params["indexed_embeddings"] = recv_embeddings(consumer, p)
 
+    # Reconstruct recurrent states from shared memory
+    rs = params.get("recurrent_states")
+    if rs is not None:
+        from ..modules.gated_delta_net import GDN_RecurrentState
+        reconstructed_rs = {}
+        for key, state_dict in rs.items():
+            reconstructed_rs[key] = GDN_RecurrentState(
+                position=state_dict["position"],
+                positions=state_dict["positions"],
+                last_conv_state=consumer.recv(state_dict["last_conv_state"], cuda=True) if state_dict["last_conv_state"] is not None else None,
+                last_recurrent_state=consumer.recv(state_dict["last_recurrent_state"], cuda=True) if state_dict["last_recurrent_state"] is not None else None,
+                batched=state_dict["batched"],
+            )
+        params["recurrent_states"] = reconstructed_rs
+
     params["backend"] = backend
 
     x = consumer.recv(shared_input)

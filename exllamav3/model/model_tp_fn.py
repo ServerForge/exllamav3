@@ -82,10 +82,11 @@ def mp_model_worker(
                 conn.send(result)
             except Exception as e:
                 tb = traceback.TracebackException.from_exception(e)
-                print("-" * 40)
-                print(" ## Exception in child process")
-                print("".join(tb.format()))
-                print("-" * 40)
+                import sys
+                print("-" * 40, file=sys.stderr, flush=True)
+                print(f" ## Exception in child process (device {device})", file=sys.stderr, flush=True)
+                print("".join(tb.format()), file=sys.stderr, flush=True)
+                print("-" * 40, file=sys.stderr, flush=True)
                 conn.send(e)
 
 
@@ -192,6 +193,7 @@ def mp_model_forward(
         "cache_seqlens",
         "positions",
         "position_ids",
+        "inv_freq",
     ]:
         p = params.get(tensor_param)
         if p is not None:

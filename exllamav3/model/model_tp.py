@@ -353,6 +353,7 @@ class Model_TPMixin:
             "cache_seqlens",
             "positions",
             "position_ids",
+            "inv_freq",
         ]:
             p = params.get(tensor_param)
             if p is not None:
@@ -375,6 +376,12 @@ class Model_TPMixin:
                     "batched": state.batched,
                 }
             params["recurrent_states"] = shared_rs
+
+        # Verify no CUDA tensors remain in params (debug)
+        import sys
+        for k, v in params.items():
+            if isinstance(v, torch.Tensor) and v.is_cuda:
+                print(f"[TP WARNING] CUDA tensor in params['{k}']: {v.shape} {v.device}", file=sys.stderr, flush=True)
 
         return self.tp_producer.send(x)
 

@@ -545,7 +545,7 @@ class BlockSparseMLP(Module):
         # Broadcast routing indices and weights
         if self.routing_device is not None:
             print(f"[MLP Device {device_id}] Synchronizing before broadcast", file=sys.stderr, flush=True)
-            params["backend"].barrier()
+            params["backend"].fwd_barrier()
             print(f"[MLP Device {device_id}] Broadcasting selected_experts from routing_device {self.routing_device}", file=sys.stderr, flush=True)
             params["backend"].broadcast(selected_experts, src_device = self.routing_device)
             print(f"[MLP Device {device_id}] Broadcast selected_experts complete", file=sys.stderr, flush=True)

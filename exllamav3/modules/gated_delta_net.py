@@ -24,10 +24,11 @@ def causal_conv1d_update_function_torch(
 ):
     bsz, dim, seq_len = x.shape
     state_len = conv_state.shape[-1]
+    groups = weight.shape[0]  # Use weight shape for TP compatibility
 
     y = torch.cat([conv_state, x], dim = -1).to(weight.dtype)
     conv_state.copy_(y[:, :, -state_len:])
-    y = F.conv1d(y, weight.unsqueeze(1), bias, padding = 0, groups = dim)
+    y = F.conv1d(y, weight.unsqueeze(1), bias, padding = 0, groups = groups)
     y = F.silu(y[:, :, -seq_len:])
     y = y.to(x.dtype)
     return y
@@ -41,10 +42,11 @@ def causal_conv1d_fwd_function_torch(
     # Differs from Qwen3-Next Transformers impl. but corresponds better to causal_conv1d which uses zeros
     # as the initial state
     bsz, dim, seq_len = x.shape
-    zero_state = torch.zeros((bsz, dim, weight.shape[-1]), dtype = x.dtype, device = x.device)
+    groups = weight.shape[0]  # Use weight shape for TP compatibility
+    zero_state = torch.zeros((bsz, groups, weight.shape[-1]), dtype = x.dtype, device = x.device)
 
     y = torch.cat([zero_state, x], dim = -1).to(weight.dtype)
-    y = F.conv1d(y, weight.unsqueeze(1), bias, padding = 0, groups = dim)
+    y = F.conv1d(y, weight.unsqueeze(1), bias, padding = 0, groups = groups)
     y = F.silu(y[:, :, -seq_len:])
     y = y.to(x.dtype)
     return y

@@ -24,16 +24,10 @@ def causal_conv1d_update_function_torch(
 ):
     bsz, dim, seq_len = x.shape
     state_len = conv_state.shape[-1]
-    groups = weight.shape[0]  # Use weight shape for TP compatibility
-
-    # Slice input to match split weight in TP mode
-    if dim != groups:
-        x = x[:, :groups, :]
-        conv_state = conv_state[:, :groups, :]
 
     y = torch.cat([conv_state, x], dim = -1).to(weight.dtype)
     conv_state.copy_(y[:, :, -state_len:])
-    y = F.conv1d(y, weight.unsqueeze(1), bias, padding = 0, groups = groups)
+    y = F.conv1d(y, weight.unsqueeze(1), bias, padding = 0, groups = dim)
     y = F.silu(y[:, :, -seq_len:])
     y = y.to(x.dtype)
     return y
@@ -47,16 +41,10 @@ def causal_conv1d_fwd_function_torch(
     # Differs from Qwen3-Next Transformers impl. but corresponds better to causal_conv1d which uses zeros
     # as the initial state
     bsz, dim, seq_len = x.shape
-    groups = weight.shape[0]  # Use weight shape for TP compatibility
-
-    # Slice input to match split weight in TP mode
-    if dim != groups:
-        x = x[:, :groups, :]
-
-    zero_state = torch.zeros((bsz, groups, weight.shape[-1]), dtype = x.dtype, device = x.device)
+    zero_state = torch.zeros((bsz, dim, weight.shape[-1]), dtype = x.dtype, device = x.device)
 
     y = torch.cat([zero_state, x], dim = -1).to(weight.dtype)
-    y = F.conv1d(y, weight.unsqueeze(1), bias, padding = 0, groups = groups)
+    y = F.conv1d(y, weight.unsqueeze(1), bias, padding = 0, groups = dim)
     y = F.silu(y[:, :, -seq_len:])
     y = y.to(x.dtype)
     return y
@@ -902,11 +890,14 @@ class GatedDeltaNet(Module):
             return exported[name]["cls"].tp_import_split(local_context, exported[name], plan, split) \
                 if split and exported.get(name) else None
 
+        # Build kwargs with split head counts
+        kwargs = exported["kwargs"].copy()
+
         module = GatedDeltaNet(
             config = None,
-            **exported["kwargs"],
             num_k_heads = num_k_heads,
             num_v_heads = num_v_heads,
+            **kwargs,
             qkvz_proj = _import_split("qkvz_proj", qkvz_split),
             qkv_proj = _import_split("qkv_proj", qkv_split),
             z_proj = _import_split("z_proj", z_split),

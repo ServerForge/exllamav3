@@ -433,6 +433,10 @@ class GatedDeltaNet(Module):
 
 
     def load_local(self, device, **kwargs):
+        # Skip load_local for zero heads in TP mode
+        if self.num_k_heads == 0:
+            return
+
         is_quantized = (
             self.qkvz_proj is not None and self.qkvz_proj.quant_format_id() == "exl3" and
             self.ba_proj is not None and self.ba_proj.quant_format_id() is None and

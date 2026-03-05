@@ -873,7 +873,10 @@ class GatedDeltaNet(Module):
 
     @staticmethod
     def tp_import(local_context, exported, plan, **kwargs):
+        import sys
+        device = local_context["device"]
         consumer = local_context["consumer"]
+
         key = exported["kwargs"]["key"]
         k_head_dim = exported["kwargs"]["k_head_dim"]
         v_head_dim = exported["kwargs"]["v_head_dim"]
@@ -884,6 +887,8 @@ class GatedDeltaNet(Module):
 
         num_k_heads = last - first
         num_v_heads = num_k_heads * num_v_groups
+
+        print(f"[GDN TP Import] Importing {key} on device {device}: first={first}, last={last}, num_k_heads={num_k_heads}, num_v_heads={num_v_heads}", file=sys.stderr, flush=True)
 
         k_dim = k_head_dim * num_k_heads
         v_dim = v_head_dim * num_v_heads

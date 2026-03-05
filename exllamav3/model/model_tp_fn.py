@@ -204,15 +204,21 @@ def mp_model_forward(
         params["indexed_embeddings"] = recv_embeddings(consumer, p)
 
     # Reconstruct recurrent states: use metadata from params + local tensor data
-    # stored on this child process from previous calls
+    # stored on this child process from previous calls.
+    # If has_state is False, the parent has a fresh empty state (new request),
+    # so discard any locally stored tensors and start with None.
     rs_meta = params.get("recurrent_states")
     if rs_meta is not None:
         from ..modules.gated_delta_net import GDN_RecurrentState
         tp_rs = local_context.get("tp_recurrent_states", {})
         reconstructed_rs = {}
         for key, meta in rs_meta.items():
-            # Get locally stored partial tensors from previous forward pass
-            local_state = tp_rs.get(key, {})
+            if meta.get("has_state", False):
+                # Use locally stored partial tensors from previous forward pass
+                local_state = tp_rs.get(key, {})
+            else:
+                # Fresh state - discard any stored tensors
+                local_state = {}
             reconstructed_rs[key] = GDN_RecurrentState(
                 position=meta["position"],
                 positions=meta["positions"],

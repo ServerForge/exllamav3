@@ -375,6 +375,7 @@ class Model_TPMixin:
                     "position": state.position,
                     "positions": state.positions,
                     "batched": state.batched,
+                    "has_state": state.position > 0 if not state.batched else any(p > 0 for p in (state.positions or [])),
                 }
             params["recurrent_states"] = shared_rs
 

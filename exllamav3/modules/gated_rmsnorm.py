@@ -106,6 +106,13 @@ class GatedRMSNorm(Module):
         out_dtype: torch.dtype | None = None,
         gate: torch.Tensor = None,
     ) -> torch.Tensor:
+        # One-shot diagnostic per instance to check shapes
+        if not hasattr(self, "_shape_diag_done"):
+            self._shape_diag_done = False
+        if not self._shape_diag_done and "layers.0" in (self.key or ""):
+            import sys
+            print(f"[GatedRMSNorm] key={self.key} x.shape={tuple(x.shape)}, w.shape={tuple(self.weight.shape)}", file=sys.stderr, flush=True)
+            self._shape_diag_done = True
         y = torch.empty_like(x, dtype = out_dtype or self.out_dtype)
         ext.gated_rms_norm(x, self.weight, y, gate, self.rms_norm_eps, self.constant_bias)
         return y

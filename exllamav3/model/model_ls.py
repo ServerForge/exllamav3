@@ -205,6 +205,15 @@ class Model_LSMixin:
         for idx, module in enumerate(modules):
             if module.caps.get("logits_output") and (num := params.get("last_tokens_only")):
                 x = x[..., -num:, :].contiguous()
+
+            # One-shot diagnostic for non-TP comparison
+            if not hasattr(self, "_ls_hs_diag_done"):
+                self._ls_hs_diag_done = False
+            if not self._ls_hs_diag_done and module.caps.get("logits_output"):
+                import sys
+                self._ls_hs_diag_done = True
+                print(f"[LS hs diag] pre_lm_head: shape={tuple(x.shape)} dtype={x.dtype} norm={x.float().norm().item():.4f} mean={x.float().mean().item():.6f} absmax={x.float().abs().max().item():.4f}", file=sys.stderr, flush=True)
+
             x = module.prepare_for_device(x, params)
             x = module.forward(x, params)
         return x

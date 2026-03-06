@@ -238,8 +238,27 @@ def mp_model_forward(
             x = x[..., -num:, :].contiguous()
         if prefill:
             params["prefill"] = (idx == last_kv_module_idx)
+
+        # One-shot diagnostic: print hidden state stats before final RMSNorm and after lm_head
+        if not hasattr(mp_model_forward, "_hs_diag_done"):
+            mp_model_forward._hs_diag_done = False
+        if not mp_model_forward._hs_diag_done and not prefill:
+            from ..modules import RMSNorm, Linear
+            from ..modules.gather import OutputGather
+            if logits_layer:
+                import sys
+                print(f"[TP hs diag] dev={local_context['device']} pre_lm_head: shape={tuple(x.shape)} dtype={x.dtype} norm={x.float().norm().item():.4f} mean={x.float().mean().item():.6f} absmax={x.float().abs().max().item():.4f}", file=sys.stderr, flush=True)
+            if isinstance(module, OutputGather):
+                mp_model_forward._hs_diag_done = True
+
         x = module.prepare_for_device(x, params)
         x = module.forward(x, params)
+
+        if not mp_model_forward._hs_diag_done and not prefill and isinstance(module, OutputGather) and x is not None:
+            import sys
+            mp_model_forward._hs_diag_done = True
+            print(f"[TP hs diag] dev={local_context['device']} post_gather: shape={tuple(x.shape)} dtype={x.dtype} norm={x.float().norm().item():.4f} absmax={x.float().abs().max().item():.4f}", file=sys.stderr, flush=True)
+
         if prefill and idx == last_kv_module_idx:
             backend.end_cpu_reduce_jobs()
             del params["prefill"]

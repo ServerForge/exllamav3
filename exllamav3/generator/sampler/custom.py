@@ -596,9 +596,28 @@ class CustomSampler(Sampler):
             past_ids = sequence_ids,
         )
 
+        # One-shot diagnostic
+        if not hasattr(CustomSampler, "_diag_done"):
+            CustomSampler._diag_done = False
+        diag = not CustomSampler._diag_done
+        if diag:
+            CustomSampler._diag_done = True
+            import sys
+            print(f"[Sampler diag] steps={[type(s).__name__ for s in self.steps]} in_logits shape={state.in_logits.shape} dtype={state.in_logits.dtype}", file=sys.stderr, flush=True)
+
         for ss in self.steps:
             assert state.state != SS.DONE, "Sampling logic error"
+            prev_state = state.state
             ss.run(state)
+            if diag:
+                import sys
+                extra = ""
+                if state.sample is not None:
+                    extra = f" sample={state.sample.flatten().tolist()}"
+                if state.indices is not None:
+                    extra += f" indices[:5]={state.indices[0, :5].tolist()}"
+                print(f"[Sampler diag] {type(ss).__name__}: {prev_state} -> {state.state}{extra}", file=sys.stderr, flush=True)
+
         assert return_state or state.state == SS.DONE, "Sampling logic error"
 
         return state if return_state else state.sample.view(out_shape)

@@ -603,29 +603,17 @@ class CustomSampler(Sampler):
         # One-shot diagnostic
         if not hasattr(CustomSampler, "_diag_count"):
             CustomSampler._diag_count = 0
-        diag = CustomSampler._diag_count < 1
+        diag = CustomSampler._diag_count < 3
         if diag:
             CustomSampler._diag_count += 1
+            import sys
+            il = state.in_logits
+            topv, topi = il.float().topk(5, dim=-1)
+            print(f"[Sampler raw] #{CustomSampler._diag_count} logits shape={il.shape} dtype={il.dtype} max={il.max().item():.4f} min={il.min().item():.4f} mean={il.float().mean().item():.4f} top5_ids={topi[0].tolist()} top5_vals={[f'{v:.2f}' for v in topv[0].tolist()]}", file=sys.stderr, flush=True)
 
         for ss in self.steps:
             assert state.state != SS.DONE, "Sampling logic error"
-            if diag and isinstance(ss, SS_Sample):
-                import sys
-                p = state.probs
-                nz = (p > 0).sum().item()
-                # Check if probs are actually sorted descending
-                sorted_ok = (p[0, :-1] >= p[0, 1:]).all().item()
-                # Check specific positions
-                print(f"[SS_Sample pre] nonzero={nz} sorted={sorted_ok} probs[0]={p[0,0].item():.6f} probs[100]={p[0,100].item():.8f} probs[1000]={p[0,1000].item():.10f} probs[6000]={p[0,6000].item():.12f} probs[27000]={p[0,27000].item():.12f}", file=sys.stderr, flush=True)
-                # Save pre-sample probs for comparison
-                pre_probs_clone = p.clone()
             ss.run(state)
-            if diag and isinstance(ss, SS_Sample):
-                import sys
-                p = state.probs  # now log+gumbel
-                temp = torch.argmax(p, dim=-1).item()
-                pre_prob_at_temp = pre_probs_clone[0, temp].item()
-                print(f"[SS_Sample post] sample={state.sample.item()} temp_idx={temp} pre_prob_at_temp={pre_prob_at_temp:.10f} noise_at_0={p[0,0].item():.4f} noise_at_temp={p[0,temp].item():.4f}", file=sys.stderr, flush=True)
 
         assert return_state or state.state == SS.DONE, "Sampling logic error"
 

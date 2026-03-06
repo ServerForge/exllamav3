@@ -611,20 +611,21 @@ class CustomSampler(Sampler):
             assert state.state != SS.DONE, "Sampling logic error"
             if diag and isinstance(ss, SS_Sample):
                 import sys
-                # Dump state right before SS_Sample
                 p = state.probs
                 nz = (p > 0).sum().item()
-                print(f"[SS_Sample pre] state={state.state} probs_shape={p.shape} nonzero={nz} top5_probs={p[0,:5].tolist()} min_nonzero={p[p>0].min().item() if nz > 0 else 'N/A'} max={p.max().item()}", file=sys.stderr, flush=True)
-                print(f"[SS_Sample pre] indices[:10]={state.indices[0,:10].tolist()}", file=sys.stderr, flush=True)
+                # Check if probs are actually sorted descending
+                sorted_ok = (p[0, :-1] >= p[0, 1:]).all().item()
+                # Check specific positions
+                print(f"[SS_Sample pre] nonzero={nz} sorted={sorted_ok} probs[0]={p[0,0].item():.6f} probs[100]={p[0,100].item():.8f} probs[1000]={p[0,1000].item():.10f} probs[6000]={p[0,6000].item():.12f} probs[27000]={p[0,27000].item():.12f}", file=sys.stderr, flush=True)
+                # Save pre-sample probs for comparison
+                pre_probs_clone = p.clone()
             ss.run(state)
             if diag and isinstance(ss, SS_Sample):
                 import sys
-                # After SS_Sample: check what temp index was picked
-                # Re-run gumbel to see the noised values (probs already modified in-place)
-                p = state.probs  # now contains log+gumbel values
-                temp = torch.argmax(p, dim=-1)
-                print(f"[SS_Sample post] sample={state.sample.flatten().tolist()} temp_idx={temp.item()} noise_top5={p[0,:5].tolist()} noise_at_temp={p[0,temp.item()].item()}", file=sys.stderr, flush=True)
-                print(f"[SS_Sample post] indices[temp]={state.indices[0,temp.item()].item()}", file=sys.stderr, flush=True)
+                p = state.probs  # now log+gumbel
+                temp = torch.argmax(p, dim=-1).item()
+                pre_prob_at_temp = pre_probs_clone[0, temp].item()
+                print(f"[SS_Sample post] sample={state.sample.item()} temp_idx={temp} pre_prob_at_temp={pre_prob_at_temp:.10f} noise_at_0={p[0,0].item():.4f} noise_at_temp={p[0,temp].item():.4f}", file=sys.stderr, flush=True)
 
         assert return_state or state.state == SS.DONE, "Sampling logic error"
 

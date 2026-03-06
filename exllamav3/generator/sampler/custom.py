@@ -119,7 +119,11 @@ class SS_Sample(SS_Base):
                 temp = torch.argmax(state.logits, dim = -1)
                 state.sample = state.indices[buffered_arange(state.bsz, state.in_logits.device), temp]
             case SS.PROBS_S | SS.PROBS_N_S:
-                ext.gumbel_noise_log(state.probs, state.probs, state.rand_u32)
+                # TEMP: pure PyTorch Gumbel sampling to test C++ kernel issue
+                torch.manual_seed(state.rand_u32)
+                u = torch.rand_like(state.probs).clamp(min=1e-20)
+                gumbel = -torch.log(-torch.log(u))
+                state.probs = torch.log(state.probs.clamp(min=1e-20)) + gumbel
                 temp = torch.argmax(state.probs, dim = -1)
                 state.sample = state.indices[buffered_arange(state.bsz, state.in_logits.device), temp]
         state.state = SS.DONE

@@ -471,7 +471,15 @@ class Model_TPMixin:
         self._update_recurrent_metadata(partial_metadata_list)
 
         self.tp_worker_result(-1)
-        return return_tensors[0]
+        result = return_tensors[0]
+        # Diagnostic: check output tensor device
+        if not hasattr(self, "_tp_diag_fwd_count"):
+            self._tp_diag_fwd_count = 0
+        if self._tp_diag_fwd_count < 2:
+            import sys
+            print(f"[TP fwd diag] output shape={tuple(result.shape)} dtype={result.dtype} device={result.device} output_device={self.output_device}", file=sys.stderr, flush=True)
+            self._tp_diag_fwd_count += 1
+        return result
 
 
     def tp_rotate_cache_pages(self, cache_id: int, all_rotations: torch.Tensor):

@@ -163,6 +163,8 @@ class GatedRMSNorm(Module):
         w = consumer.recv(exported["weight"], cuda = True)
         if w.dim() == 2:
             w = w[first : last, :]
+        elif w.dim() == 1:
+            w = w[first : last]
         module.weight = nn.Parameter(w.to(module.device).contiguous())
 
         return module

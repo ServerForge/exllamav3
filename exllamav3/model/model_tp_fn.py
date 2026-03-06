@@ -239,15 +239,18 @@ def mp_model_forward(
         if prefill:
             params["prefill"] = (idx == last_kv_module_idx)
 
-        # One-shot diagnostic: print hidden state stats before final RMSNorm and after lm_head
+        # One-shot diagnostic: print hidden state stats at key layers
         if not hasattr(mp_model_forward, "_hs_diag_done"):
             mp_model_forward._hs_diag_done = False
-        if not mp_model_forward._hs_diag_done and not prefill:
-            from ..modules import RMSNorm, Linear
+        if not mp_model_forward._hs_diag_done and not prefill and local_context['device'] == 0:
+            from ..modules.transformer import TransformerBlock
             from ..modules.gather import OutputGather
+            if isinstance(module, TransformerBlock) and idx in (1, 2, len(modules)//2, len(modules)-4):
+                import sys
+                print(f"[TP hs diag] dev=0 layer={idx} pre: norm={x.float().norm().item():.4f} absmax={x.float().abs().max().item():.4f}", file=sys.stderr, flush=True)
             if logits_layer:
                 import sys
-                print(f"[TP hs diag] dev={local_context['device']} pre_lm_head: shape={tuple(x.shape)} dtype={x.dtype} norm={x.float().norm().item():.4f} mean={x.float().mean().item():.6f} absmax={x.float().abs().max().item():.4f}", file=sys.stderr, flush=True)
+                print(f"[TP hs diag] dev=0 pre_lm_head: norm={x.float().norm().item():.4f} absmax={x.float().abs().max().item():.4f}", file=sys.stderr, flush=True)
             if isinstance(module, OutputGather):
                 mp_model_forward._hs_diag_done = True
 

@@ -209,10 +209,15 @@ class Model_LSMixin:
             # One-shot diagnostic for non-TP comparison
             if not hasattr(self, "_ls_hs_diag_done"):
                 self._ls_hs_diag_done = False
-            if not self._ls_hs_diag_done and module.caps.get("logits_output"):
-                import sys
-                self._ls_hs_diag_done = True
-                print(f"[LS hs diag] pre_lm_head: shape={tuple(x.shape)} dtype={x.dtype} norm={x.float().norm().item():.4f} mean={x.float().mean().item():.6f} absmax={x.float().abs().max().item():.4f}", file=sys.stderr, flush=True)
+            if not self._ls_hs_diag_done:
+                from ..modules.transformer import TransformerBlock
+                if isinstance(module, TransformerBlock) and idx in (1, 2, len(modules)//2, len(modules)-4):
+                    import sys
+                    print(f"[LS hs diag] layer={idx} pre: norm={x.float().norm().item():.4f} absmax={x.float().abs().max().item():.4f}", file=sys.stderr, flush=True)
+                if module.caps.get("logits_output"):
+                    import sys
+                    self._ls_hs_diag_done = True
+                    print(f"[LS hs diag] pre_lm_head: norm={x.float().norm().item():.4f} absmax={x.float().abs().max().item():.4f}", file=sys.stderr, flush=True)
 
             x = module.prepare_for_device(x, params)
             x = module.forward(x, params)

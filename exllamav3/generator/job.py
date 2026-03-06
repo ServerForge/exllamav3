@@ -404,7 +404,7 @@ class Job:
         # assert all(seq.live for seq in self.sequences)
 
         next_token = self.sampler.forward(
-            logits.contiguous(),
+            logits.clone(),
             self.current_pinned_ids,
             self.rng.randint(0, (1<<32)-1),
             self.generator.tokenizer,

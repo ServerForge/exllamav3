@@ -68,6 +68,14 @@ class TransformerBlock(Module):
             if params.get("prefill"): return x
             if self.attn_post_norm:
                 y = self.attn_post_norm.forward(y, params)
+
+            # One-shot diagnostic for first block
+            if not hasattr(TransformerBlock, "_tb_diag_count"):
+                TransformerBlock._tb_diag_count = 0
+            if TransformerBlock._tb_diag_count < 2 and not params.get("prefill"):
+                import sys
+                print(f"[TB diag] key={self.key} attn_out: norm={y.float().norm().item():.4f} absmax={y.float().abs().max().item():.4f} x_pre: norm={x.float().norm().item():.4f}", file=sys.stderr, flush=True)
+
             x += y
 
         if self.mlp:
@@ -78,6 +86,13 @@ class TransformerBlock(Module):
             y = self.mlp.forward(y, params)
             if self.mlp_post_norm:
                 y = self.mlp_post_norm.forward(y, params)
+
+            # One-shot diagnostic for first block
+            if TransformerBlock._tb_diag_count < 2 and not params.get("prefill"):
+                import sys
+                print(f"[TB diag] key={self.key} mlp_out: norm={y.float().norm().item():.4f} absmax={y.float().abs().max().item():.4f}", file=sys.stderr, flush=True)
+                TransformerBlock._tb_diag_count += 1
+
             x += y
 
         return to2(x, out_dtype, self.out_dtype)

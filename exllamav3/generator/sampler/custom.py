@@ -597,26 +597,30 @@ class CustomSampler(Sampler):
         )
 
         # One-shot diagnostic
-        if not hasattr(CustomSampler, "_diag_done"):
-            CustomSampler._diag_done = False
-        diag = not CustomSampler._diag_done
+        if not hasattr(CustomSampler, "_diag_count"):
+            CustomSampler._diag_count = 0
+        diag = CustomSampler._diag_count < 1
         if diag:
-            CustomSampler._diag_done = True
-            import sys
-            print(f"[Sampler diag] steps={[type(s).__name__ for s in self.steps]} in_logits shape={state.in_logits.shape} dtype={state.in_logits.dtype}", file=sys.stderr, flush=True)
+            CustomSampler._diag_count += 1
 
         for ss in self.steps:
             assert state.state != SS.DONE, "Sampling logic error"
-            prev_state = state.state
-            ss.run(state)
-            if diag:
+            if diag and isinstance(ss, SS_Sample):
                 import sys
-                extra = ""
-                if state.sample is not None:
-                    extra = f" sample={state.sample.flatten().tolist()}"
-                if state.indices is not None:
-                    extra += f" indices[:5]={state.indices[0, :5].tolist()}"
-                print(f"[Sampler diag] {type(ss).__name__}: {prev_state} -> {state.state}{extra}", file=sys.stderr, flush=True)
+                # Dump state right before SS_Sample
+                p = state.probs
+                nz = (p > 0).sum().item()
+                print(f"[SS_Sample pre] state={state.state} probs_shape={p.shape} nonzero={nz} top5_probs={p[0,:5].tolist()} min_nonzero={p[p>0].min().item() if nz > 0 else 'N/A'} max={p.max().item()}", file=sys.stderr, flush=True)
+                print(f"[SS_Sample pre] indices[:10]={state.indices[0,:10].tolist()}", file=sys.stderr, flush=True)
+            ss.run(state)
+            if diag and isinstance(ss, SS_Sample):
+                import sys
+                # After SS_Sample: check what temp index was picked
+                # Re-run gumbel to see the noised values (probs already modified in-place)
+                p = state.probs  # now contains log+gumbel values
+                temp = torch.argmax(p, dim=-1)
+                print(f"[SS_Sample post] sample={state.sample.flatten().tolist()} temp_idx={temp.item()} noise_top5={p[0,:5].tolist()} noise_at_temp={p[0,temp.item()].item()}", file=sys.stderr, flush=True)
+                print(f"[SS_Sample post] indices[temp]={state.indices[0,temp.item()].item()}", file=sys.stderr, flush=True)
 
         assert return_state or state.state == SS.DONE, "Sampling logic error"
 

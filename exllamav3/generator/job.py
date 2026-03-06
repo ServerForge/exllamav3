@@ -626,6 +626,15 @@ class Job:
         id_to_piece = self.generator.tokenizer.get_id_to_piece_list(self.decode_special_tokens)
         new_text = id_to_piece[next_token.item()]
 
+        # Diagnostic: print sampled token info for first 10 tokens
+        import sys
+        if not hasattr(Job, "_tp_sample_diag_count"):
+            Job._tp_sample_diag_count = 0
+        if Job._tp_sample_diag_count < 10 and self.generator.model.loaded_tp:
+            Job._tp_sample_diag_count += 1
+            argmax_id = logits[0, -1].float().argmax().item() if logits is not None else "N/A"
+            print(f"[Sample diag] #{Job._tp_sample_diag_count} sampled={next_token.item()} argmax={argmax_id} text={repr(new_text)}", file=sys.stderr, flush=True)
+
         if self.new_tokens == 0:
             unhealed = id_to_piece[self.prefix_token[0].item()]
             new_text = new_text[len(unhealed):]

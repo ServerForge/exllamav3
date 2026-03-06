@@ -403,17 +403,13 @@ class Job:
         # assert self.is_prefill_done()
         # assert all(seq.live for seq in self.sequences)
 
-        # TEMP DIAGNOSTIC: force argmax to verify TP pipeline
-        if self.generator.model.loaded_tp:
-            next_token = torch.argmax(logits[:, -1:, :], dim=-1)
-        else:
-            next_token = self.sampler.forward(
-                logits,
-                self.current_pinned_ids,
-                self.rng.randint(0, (1<<32)-1),
-                self.generator.tokenizer,
-                logit_mask = self.device_logit_mask
-            )
+        next_token = self.sampler.forward(
+            logits.contiguous(),
+            self.current_pinned_ids,
+            self.rng.randint(0, (1<<32)-1),
+            self.generator.tokenizer,
+            logit_mask = self.device_logit_mask
+        )
 
         next_prob, next_k_tokens, next_k_probs = None, None, None
 

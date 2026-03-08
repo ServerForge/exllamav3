@@ -744,11 +744,9 @@ class GatedDeltaNet(Module):
             else:
                 rs.positions = [r + seqlen for r in rs.positions]
 
-        # TP reduction: GDN outputs are per-head and should NOT be summed.
-        # The o_proj is input-split and will handle the all_reduce.
-        # Removing this incorrect all_reduce that was summing independent head outputs.
-        # if self.tp_reduce:
-        #     params["backend"].all_reduce(x)
+        # TP reduction: o_proj is input-split, so we need all_reduce to sum partial outputs
+        if self.tp_reduce:
+            params["backend"].all_reduce(x)
 
         return to2(x, out_dtype, self.out_dtype)
 
@@ -897,12 +895,6 @@ class GatedDeltaNet(Module):
         fdim_qkvz = 2 * k_dim + 2 * v_dim
         fdim_qkv = 2 * k_dim + v_dim
 
-        # Output dimension split for o_proj (output-split on hidden_size)
-        device_idx = first // num_k_heads  # Which device: 0, 1, 2, 3
-        o_dim_per_device = hidden_size // len(local_context["active_devices"])
-        o_first = device_idx * o_dim_per_device
-        o_last = (device_idx + 1) * o_dim_per_device
-
         qkvz_split = (True, first * (2 * k_head_dim + 2 * v_head_dim * num_v_groups),
                       last * (2 * k_head_dim + 2 * v_head_dim * num_v_groups)) \
             if num_k_heads else None
@@ -917,7 +909,9 @@ class GatedDeltaNet(Module):
             if num_k_heads else None
         a_split = (True, first * num_v_groups, last * num_v_groups) \
             if num_k_heads else None
-        o_split = (True, o_first, o_last) \
+        # o_proj is input-split: each device gets a slice of the input dimension (rows of weight matrix)
+        # matching its partial head outputs (num_v_heads * v_head_dim per device)
+        o_split = (False, first * v_head_dim * num_v_groups, last * v_head_dim * num_v_groups) \
             if num_k_heads else None
         # Conv operates on mixed_qkv which has fdim_qkv channels per head group
         conv_split = (first * (2 * k_head_dim + v_head_dim * num_v_groups),
@@ -989,10 +983,9 @@ class GatedDeltaNet(Module):
         else:
             module.conv1d_bias = conv1d_bias
 
-        # GDN uses output-split o_proj, so no all_reduce needed
-        # if not kwargs.get("skip_reduction"):
-        #     module.tp_reduce = True
-        module.tp_reduce = False
+        # GDN uses input-split o_proj, so all_reduce is needed to sum partial outputs
+        if not kwargs.get("skip_reduction"):
+            module.tp_reduce = True
 
         module.load_local(device)
 

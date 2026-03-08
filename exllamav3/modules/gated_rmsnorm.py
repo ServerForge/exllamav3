@@ -153,6 +153,9 @@ class GatedRMSNorm(Module):
             import sys
             print(f"[GatedRMSNorm import] key={exported['kwargs']['key']}, received w.shape={w.shape}", file=sys.stderr, flush=True)
             GatedRMSNorm._import_diag_done = True
+        # Flatten weight to 1D if it's 2D
+        if w.dim() > 1:
+            w = w.flatten()
         module.weight = nn.Parameter(w)
         torch.cuda.synchronize()
         return module

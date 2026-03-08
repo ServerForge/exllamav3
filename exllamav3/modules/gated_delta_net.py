@@ -641,6 +641,10 @@ class GatedDeltaNet(Module):
                     print(f"[GDN] Using SPLIT path (z_proj), layer={self.layer_idx}, tp_reduce={self.tp_reduce}, params tp_reduce={params.get('tp_reduce')}", file=sys.stderr, flush=True)
                     self._split_path_diag = True
 
+                # Set tp_reduce in params so output-split projections know to skip all_reduce
+                if self.tp_reduce:
+                    params["tp_reduce"] = True
+
                 qkv = self.qkv_proj.forward(x, params)
                 z_raw = self.z_proj.forward(x, params)
 

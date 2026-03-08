@@ -106,19 +106,9 @@ class GatedRMSNorm(Module):
         out_dtype: torch.dtype | None = None,
         gate: torch.Tensor = None,
     ) -> torch.Tensor:
-        # In TP mode, skip RMS normalization to avoid per-device normalization issues
-        # Only apply weight scaling and gating (restructured approach for TP compatibility)
-        if params.get("backend") is not None and hasattr(params["backend"], "active_devices"):
-            import torch.nn.functional as F
-            # Skip normalization, just apply weight and gate
-            hidden_states = x * self.weight
-            hidden_states = hidden_states * F.silu(gate.to(torch.float32))
-            return hidden_states.to(out_dtype or self.out_dtype)
-        else:
-            # Non-TP mode: normal gated RMS norm
-            y = torch.empty_like(x, dtype = out_dtype or self.out_dtype)
-            ext.gated_rms_norm(x, self.weight, y, gate, self.rms_norm_eps, self.constant_bias)
-            return y
+        y = torch.empty_like(x, dtype = out_dtype or self.out_dtype)
+        ext.gated_rms_norm(x, self.weight, y, gate, self.rms_norm_eps, self.constant_bias)
+        return y
 
     def make_tp_allocation(self, options: dict) -> list[TPAllocation]:
         stc = self.config.stc

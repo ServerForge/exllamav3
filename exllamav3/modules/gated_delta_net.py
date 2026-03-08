@@ -719,7 +719,25 @@ class GatedDeltaNet(Module):
                 pre_norm = core_attn_out.float().norm().item()
                 print(f"[GDN diag] layer={self.layer_idx} pre_norm: norm={pre_norm:.4f}", file=sys.stderr, flush=True)
 
-            core_attn_out = self.norm.forward(core_attn_out, params, gate = z)
+            # In TP mode, gather all heads before normalization
+            if self.tp_reduce:
+                # Reshape to (bsz, seqlen, num_v_heads, v_head_dim) for gathering
+                # All-gather along head dimension (dim=2)
+                core_attn_out_gathered = params["backend"].all_gather(core_attn_out, dim=2)
+                # Now we have all heads: (bsz, seqlen, num_v_heads_full, v_head_dim)
+                # Apply normalization over all heads
+                core_attn_out_normed = self.norm.forward(core_attn_out_gathered, params, gate = params["backend"].all_gather(z, dim=2))
+                # Split back to partial heads for this device
+                num_v_heads_full = core_attn_out_normed.shape[2]
+                num_devices = len(params["backend"].active_devices)
+                heads_per_device = num_v_heads_full // num_devices
+                device_idx = params["backend"].active_devices.index(params["backend"].device)
+                start_head = device_idx * heads_per_device
+                end_head = start_head + heads_per_device
+                core_attn_out = core_attn_out_normed[:, :, start_head:end_head, :]
+            else:
+                # Non-TP mode: normal normalization
+                core_attn_out = self.norm.forward(core_attn_out, params, gate = z)
 
             if not self._gdn_norm_diag_done and self.layer_idx == 0 and not params.get("prefill"):
                 import sys

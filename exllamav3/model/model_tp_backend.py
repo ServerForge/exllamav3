@@ -108,6 +108,18 @@ class TPBackendNCCL:
             dist.all_reduce(tensor, async_op = False)
 
 
+    def all_gather(self, tensor: torch.Tensor, dim: int = -1) -> torch.Tensor:
+        """
+        All-gather operation: concatenate tensors from all devices along specified dimension.
+        Each device receives the full concatenated result.
+        """
+        # Get tensor list from all ranks
+        tensor_list = [torch.empty_like(tensor) for _ in range(self.world_size)]
+        dist.all_gather(tensor_list, tensor)
+        # Concatenate along specified dimension
+        return torch.cat(tensor_list, dim=dim)
+
+
     def gather(
         self,
         tensor: torch.Tensor,
@@ -353,6 +365,33 @@ class TPBackendNative:
         #         self.shbuf_size,
         #         self.abort_flag
         #     )
+
+
+    def all_gather(self, tensor: torch.Tensor, dim: int = -1) -> torch.Tensor:
+        """
+        All-gather operation: concatenate tensors from all devices along specified dimension.
+        Each device receives the full concatenated result.
+        Uses gather to each device sequentially.
+        """
+        num_devices = len(self.active_devices)
+        device_idx = self.active_devices.index(self.device)
+
+        # Get the size along the gather dimension
+        shape = list(tensor.shape)
+        local_size = shape[dim]
+
+        # Create output tensor with concatenated size
+        shape[dim] = local_size * num_devices
+        out_tensor = torch.empty(shape, dtype=tensor.dtype, device=tensor.device)
+
+        # Gather from all devices
+        gather_devices = torch.tensor(self.active_devices, dtype=torch.int32)
+        ldims = [local_size] * num_devices
+
+        # Use gather to collect all tensors
+        self.gather(tensor, out_tensor, gather_devices, self.device, ldims)
+
+        return out_tensor
 
 
     def gather(

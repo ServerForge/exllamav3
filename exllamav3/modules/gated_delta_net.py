@@ -735,8 +735,21 @@ class GatedDeltaNet(Module):
                     # All-gather along head dimension (dim=2)
                     core_attn_out_gathered = params["backend"].all_gather(core_attn_out, dim=2)
                     z_gathered = params["backend"].all_gather(z, dim=2)
+
+                    if not hasattr(self, "_gather_shape_check") and self.layer_idx == 0:
+                        import sys
+                        print(f"[GDN] gathered shape={core_attn_out_gathered.shape}, z_gathered shape={z_gathered.shape}", file=sys.stderr, flush=True)
+                        self._gather_shape_check = True
+
                     # Apply normalization over all heads
                     core_attn_out_normed = self.norm.forward(core_attn_out_gathered, params, gate=z_gathered)
+
+                    if not hasattr(self, "_normed_shape_check") and self.layer_idx == 0:
+                        import sys
+                        normed_norm = core_attn_out_normed.float().norm().item()
+                        print(f"[GDN] normed shape={core_attn_out_normed.shape}, norm={normed_norm:.4f}", file=sys.stderr, flush=True)
+                        self._normed_shape_check = True
+
                     # Split back to partial heads for this device
                     num_v_heads_full = core_attn_out_normed.shape[2]
                     num_devices = len(params["backend"].active_devices)
@@ -745,6 +758,12 @@ class GatedDeltaNet(Module):
                     start_head = device_idx * heads_per_device
                     end_head = start_head + heads_per_device
                     core_attn_out = core_attn_out_normed[:, :, start_head:end_head, :]
+
+                    if not hasattr(self, "_split_shape_check") and self.layer_idx == 0:
+                        import sys
+                        split_norm = core_attn_out.float().norm().item()
+                        print(f"[GDN] split shape={core_attn_out.shape}, norm={split_norm:.4f}, device_idx={device_idx}, heads={start_head}:{end_head}", file=sys.stderr, flush=True)
+                        self._split_shape_check = True
                 else:
                     # Non-TP mode or TPBackendNative: normal per-device normalization
                     core_attn_out = self.norm.forward(core_attn_out, params, gate=z)

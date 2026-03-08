@@ -607,6 +607,13 @@ class GatedDeltaNet(Module):
                 qkvz = self.qkvz_proj.forward(x, params)
                 ba = self.ba_proj.forward(x, params)
 
+                if not hasattr(self, "_qkvz_diag") and self.layer_idx == 0 and not params.get("prefill") and params.get("tp_reduce"):
+                    import sys
+                    qkvz_norm = qkvz.float().norm().item()
+                    qkvz_proj_out_features = self.qkvz_proj.out_features if hasattr(self.qkvz_proj, 'out_features') else None
+                    print(f"[GDN qkvz] layer={self.layer_idx} qkvz: norm={qkvz_norm:.4f}, shape={qkvz.shape}, qkvz_proj.out_features={qkvz_proj_out_features}", file=sys.stderr, flush=True)
+                    self._qkvz_diag = True
+
                 mixed_qkv = torch.empty((bsz, self.fdim_qkv, seqlen), dtype = torch.bfloat16, device = self.device)
                 z = torch.empty((bsz, seqlen, self.num_v_heads, self.v_head_dim), dtype = torch.bfloat16, device = self.device)
                 beta = torch.empty((bsz, seqlen, self.num_v_heads), dtype = torch.bfloat16, device = self.device)

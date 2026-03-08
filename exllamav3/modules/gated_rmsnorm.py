@@ -149,6 +149,10 @@ class GatedRMSNorm(Module):
         )
         module.device = device
         w = consumer.recv(exported["weight"], cuda = True)
+        if not hasattr(GatedRMSNorm, "_import_diag_done"):
+            import sys
+            print(f"[GatedRMSNorm import] key={exported['kwargs']['key']}, received w.shape={w.shape}", file=sys.stderr, flush=True)
+            GatedRMSNorm._import_diag_done = True
         module.weight = nn.Parameter(w)
         torch.cuda.synchronize()
         return module

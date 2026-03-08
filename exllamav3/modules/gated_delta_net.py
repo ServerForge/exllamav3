@@ -892,6 +892,10 @@ class GatedDeltaNet(Module):
         num_v_heads = num_k_heads * num_v_groups
         num_k_heads_full = len(local_context["active_devices"]) * num_k_heads
 
+        if not hasattr(sys.modules[__name__], "_gdn_tp_import_diag"):
+            print(f"[GDN tp_import] first={first}, last={last}, num_k_heads={num_k_heads}, num_v_groups={num_v_groups}, num_v_heads={num_v_heads}", file=sys.stderr, flush=True)
+            sys.modules[__name__]._gdn_tp_import_diag = True
+
         k_dim = k_head_dim * num_k_heads
         v_dim = v_head_dim * num_v_heads
 
@@ -904,7 +908,7 @@ class GatedDeltaNet(Module):
         qkv_split = (True, first * (2 * k_head_dim + v_head_dim * num_v_groups),
                      last * (2 * k_head_dim + v_head_dim * num_v_groups)) \
             if num_k_heads else None
-        z_split = (True, first * v_head_dim, last * v_head_dim) \
+        z_split = (True, first * v_head_dim * num_v_groups, last * v_head_dim * num_v_groups) \
             if num_k_heads else None
         ba_split = (True, first * 2 * num_v_groups, last * 2 * num_v_groups) \
             if num_k_heads else None

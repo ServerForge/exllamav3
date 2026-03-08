@@ -720,9 +720,16 @@ class GatedDeltaNet(Module):
                 print(f"[GDN diag] layer={self.layer_idx} pre_norm: norm={pre_norm:.4f}", file=sys.stderr, flush=True)
 
             # In TP mode with NCCL backend, gather all heads before normalization
-            if self.tp_reduce and hasattr(params.get("backend"), "all_gather"):
-                # All-gather along head dimension (dim=2)
-                core_attn_out_gathered = params["backend"].all_gather(core_attn_out, dim=2)
+            if self.tp_reduce:
+                backend = params.get("backend")
+                if not hasattr(self, "_all_gather_check"):
+                    import sys
+                    print(f"[GDN] tp_reduce={self.tp_reduce}, backend={type(backend).__name__ if backend else None}, has_all_gather={hasattr(backend, 'all_gather') if backend else False}", file=sys.stderr, flush=True)
+                    self._all_gather_check = True
+
+                if backend and hasattr(backend, "all_gather"):
+                    # All-gather along head dimension (dim=2)
+                    core_attn_out_gathered = params["backend"].all_gather(core_attn_out, dim=2)
                 z_gathered = params["backend"].all_gather(z, dim=2)
                 # Apply normalization over all heads
                 core_attn_out_normed = self.norm.forward(core_attn_out_gathered, params, gate=z_gathered)

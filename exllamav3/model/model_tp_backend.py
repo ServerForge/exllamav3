@@ -374,14 +374,22 @@ class TPBackendNative:
         Uses gather to each device sequentially.
         """
         num_devices = len(self.active_devices)
-        device_idx = self.active_devices.index(self.device)
 
-        # Get the size along the gather dimension
-        shape = list(tensor.shape)
-        local_size = shape[dim]
+        # Normalize dimension
+        if dim < 0:
+            dim = tensor.ndim + dim
+
+        # Move gather dimension to last position
+        perm = list(range(tensor.ndim))
+        perm[dim], perm[-1] = perm[-1], perm[dim]
+        tensor_permuted = tensor.permute(perm)
+
+        # Get the size along the gather dimension (now last)
+        shape = list(tensor_permuted.shape)
+        local_size = shape[-1]
 
         # Create output tensor with concatenated size
-        shape[dim] = local_size * num_devices
+        shape[-1] = local_size * num_devices
         out_tensor = torch.empty(shape, dtype=tensor.dtype, device=tensor.device)
 
         # Gather from all devices
@@ -389,7 +397,10 @@ class TPBackendNative:
         ldims = [local_size] * num_devices
 
         # Use gather to collect all tensors
-        self.gather(tensor, out_tensor, gather_devices, self.device, ldims)
+        self.gather(tensor_permuted, out_tensor, gather_devices, self.device, ldims)
+
+        # Permute back to original dimension order
+        out_tensor = out_tensor.permute(perm)
 
         return out_tensor
 

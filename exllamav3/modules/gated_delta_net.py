@@ -636,13 +636,21 @@ class GatedDeltaNet(Module):
                 )
             else:
                 # TODO: Bound class and/or graph for this part
-                if not hasattr(self, "_x_diag") and self.layer_idx == 0 and not params.get("prefill") and params.get("tp_reduce"):
+                if not hasattr(self, "_split_path_diag"):
                     import sys
-                    x_norm = x.float().norm().item()
-                    print(f"[GDN input] layer={self.layer_idx} x (input to z_proj): norm={x_norm:.4f}, shape={x.shape}", file=sys.stderr, flush=True)
-                    self._x_diag = True
+                    print(f"[GDN] Using SPLIT path (z_proj), layer={self.layer_idx}, tp_reduce={self.tp_reduce}, params tp_reduce={params.get('tp_reduce')}", file=sys.stderr, flush=True)
+                    self._split_path_diag = True
+
                 qkv = self.qkv_proj.forward(x, params)
-                z = self.z_proj.forward(x, params).view(bsz, seqlen, self.num_v_heads, self.v_head_dim)
+                z_raw = self.z_proj.forward(x, params)
+
+                if not hasattr(self, "_z_raw_diag") and self.tp_reduce:
+                    import sys
+                    z_raw_norm = z_raw.float().norm().item()
+                    print(f"[GDN z_raw] layer={self.layer_idx} z_raw (before view): norm={z_raw_norm:.4f}, shape={z_raw.shape}", file=sys.stderr, flush=True)
+                    self._z_raw_diag = True
+
+                z = z_raw.view(bsz, seqlen, self.num_v_heads, self.v_head_dim)
                 b = self.b_proj.forward(x, params)
                 a = self.a_proj.forward(x, params)
 

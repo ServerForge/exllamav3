@@ -211,7 +211,8 @@ class Model_LSMixin:
             self._emb_diag_done = True
 
         for idx, module in enumerate(modules):
-            if module.caps.get("logits_output") and (num := params.get("last_tokens_only")):
+            logits_layer = module.caps.get("logits_output")
+            if logits_layer and (num := params.get("last_tokens_only")):
                 x = x[..., -num:, :].contiguous()
 
             # One-shot diagnostic for non-TP comparison
@@ -229,5 +230,14 @@ class Model_LSMixin:
 
             x = module.prepare_for_device(x, params)
             x = module.forward(x, params)
-        return x
 
+            # Diagnostic: print logits stats after lm_head
+            if logits_layer and not hasattr(self, "_ls_logits_diag_done"):
+                self._ls_logits_diag_done = False
+            if logits_layer and not self._ls_logits_diag_done and not params.get("prefill"):
+                import sys
+                top5_vals, top5_ids = x.float().topk(5, dim=-1)
+                print(f"[LS logits] max={x.float().max().item():.2f} top5_ids={top5_ids.squeeze().tolist()} top5_vals={[f'{v:.2f}' for v in top5_vals.squeeze().tolist()]}", file=sys.stderr, flush=True)
+                self._ls_logits_diag_done = True
+
+        return x

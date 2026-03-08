@@ -739,6 +739,7 @@ class GatedDeltaNet(Module):
                     if not hasattr(self, "_gather_shape_check") and self.layer_idx == 0:
                         import sys
                         print(f"[GDN] gathered shape={core_attn_out_gathered.shape}, z_gathered shape={z_gathered.shape}", file=sys.stderr, flush=True)
+                        print(f"[GDN] norm.weight shape={self.norm.weight.shape if self.norm.weight is not None else None}", file=sys.stderr, flush=True)
                         self._gather_shape_check = True
 
                     # Apply normalization over all heads

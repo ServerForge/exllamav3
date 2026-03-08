@@ -719,14 +719,13 @@ class GatedDeltaNet(Module):
                 pre_norm = core_attn_out.float().norm().item()
                 print(f"[GDN diag] layer={self.layer_idx} pre_norm: norm={pre_norm:.4f}", file=sys.stderr, flush=True)
 
-            # In TP mode, gather all heads before normalization
-            if self.tp_reduce:
-                # Reshape to (bsz, seqlen, num_v_heads, v_head_dim) for gathering
+            # In TP mode with NCCL backend, gather all heads before normalization
+            if self.tp_reduce and hasattr(params.get("backend"), "all_gather"):
                 # All-gather along head dimension (dim=2)
                 core_attn_out_gathered = params["backend"].all_gather(core_attn_out, dim=2)
-                # Now we have all heads: (bsz, seqlen, num_v_heads_full, v_head_dim)
+                z_gathered = params["backend"].all_gather(z, dim=2)
                 # Apply normalization over all heads
-                core_attn_out_normed = self.norm.forward(core_attn_out_gathered, params, gate = params["backend"].all_gather(z, dim=2))
+                core_attn_out_normed = self.norm.forward(core_attn_out_gathered, params, gate=z_gathered)
                 # Split back to partial heads for this device
                 num_v_heads_full = core_attn_out_normed.shape[2]
                 num_devices = len(params["backend"].active_devices)
@@ -736,8 +735,8 @@ class GatedDeltaNet(Module):
                 end_head = start_head + heads_per_device
                 core_attn_out = core_attn_out_normed[:, :, start_head:end_head, :]
             else:
-                # Non-TP mode: normal normalization
-                core_attn_out = self.norm.forward(core_attn_out, params, gate = z)
+                # Non-TP mode or TPBackendNative: normal per-device normalization
+                core_attn_out = self.norm.forward(core_attn_out, params, gate=z)
 
             if not self._gdn_norm_diag_done and self.layer_idx == 0 and not params.get("prefill"):
                 import sys
@@ -748,9 +747,6 @@ class GatedDeltaNet(Module):
             core_attn_out = core_attn_out.view(bsz, seqlen, self.num_v_heads * self.v_head_dim)
 
             # Output projection
-            # In TP mode, each device has partial heads and computes partial output.
-            # The o_proj is output-split, so each device produces independent output features.
-            # These are gathered/concatenated later by the OutputGather module.
             x = self.o_proj.forward(core_attn_out, params)
 
         # Update cache

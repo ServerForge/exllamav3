@@ -745,12 +745,9 @@ class GatedDeltaNet(Module):
                 rs.positions = [r + seqlen for r in rs.positions]
 
         # TP reduction: o_proj is input-split, so we need all_reduce to sum partial outputs
-        # However, since each device normalized its heads independently, we're summing
-        # normalized outputs which causes amplification. Scale down by sqrt(num_devices).
+        # No scaling needed since we disabled normalization in TP mode
         if self.tp_reduce:
             params["backend"].all_reduce(x)
-            num_devices = len(params["backend"].active_devices)
-            x = x / (num_devices ** 0.5)
 
         return to2(x, out_dtype, self.out_dtype)
 

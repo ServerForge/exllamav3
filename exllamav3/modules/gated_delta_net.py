@@ -730,20 +730,20 @@ class GatedDeltaNet(Module):
                 if backend and hasattr(backend, "all_gather"):
                     # All-gather along head dimension (dim=2)
                     core_attn_out_gathered = params["backend"].all_gather(core_attn_out, dim=2)
-                z_gathered = params["backend"].all_gather(z, dim=2)
-                # Apply normalization over all heads
-                core_attn_out_normed = self.norm.forward(core_attn_out_gathered, params, gate=z_gathered)
-                # Split back to partial heads for this device
-                num_v_heads_full = core_attn_out_normed.shape[2]
-                num_devices = len(params["backend"].active_devices)
-                heads_per_device = num_v_heads_full // num_devices
-                device_idx = params["backend"].active_devices.index(params["backend"].device)
-                start_head = device_idx * heads_per_device
-                end_head = start_head + heads_per_device
-                core_attn_out = core_attn_out_normed[:, :, start_head:end_head, :]
-            else:
-                # Non-TP mode or TPBackendNative: normal per-device normalization
-                core_attn_out = self.norm.forward(core_attn_out, params, gate=z)
+                    z_gathered = params["backend"].all_gather(z, dim=2)
+                    # Apply normalization over all heads
+                    core_attn_out_normed = self.norm.forward(core_attn_out_gathered, params, gate=z_gathered)
+                    # Split back to partial heads for this device
+                    num_v_heads_full = core_attn_out_normed.shape[2]
+                    num_devices = len(params["backend"].active_devices)
+                    heads_per_device = num_v_heads_full // num_devices
+                    device_idx = params["backend"].active_devices.index(params["backend"].device)
+                    start_head = device_idx * heads_per_device
+                    end_head = start_head + heads_per_device
+                    core_attn_out = core_attn_out_normed[:, :, start_head:end_head, :]
+                else:
+                    # Non-TP mode or TPBackendNative: normal per-device normalization
+                    core_attn_out = self.norm.forward(core_attn_out, params, gate=z)
 
             if not self._gdn_norm_diag_done and self.layer_idx == 0 and not params.get("prefill"):
                 import sys

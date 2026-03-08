@@ -729,11 +729,10 @@ class GatedDeltaNet(Module):
 
             core_attn_out = core_attn_out.view(bsz, seqlen, self.num_v_heads * self.v_head_dim)
 
-            # TP: Gather head outputs from all devices before o_proj
-            if self.tp_reduce:
-                core_attn_out = params["backend"].all_gather(core_attn_out, dim=-1)
-
             # Output projection
+            # In TP mode, each device has partial heads and computes partial output.
+            # The o_proj is output-split, so each device produces independent output features.
+            # These are gathered/concatenated later by the OutputGather module.
             x = self.o_proj.forward(core_attn_out, params)
 
         # Update cache
@@ -910,7 +909,7 @@ class GatedDeltaNet(Module):
             if num_k_heads else None
         a_split = (True, first * num_v_groups, last * num_v_groups) \
             if num_k_heads else None
-        o_split = (False, first * v_head_dim * num_v_groups, last * v_head_dim * num_v_groups) \
+        o_split = (True, first * v_head_dim * num_v_groups, last * v_head_dim * num_v_groups) \
             if num_k_heads else None
         # Conv operates on mixed_qkv which has fdim_qkv channels per head group
         conv_split = (first * (2 * k_head_dim + v_head_dim * num_v_groups),
@@ -982,8 +981,10 @@ class GatedDeltaNet(Module):
         else:
             module.conv1d_bias = conv1d_bias
 
-        if not kwargs.get("skip_reduction"):
-            module.tp_reduce = True
+        # GDN uses output-split o_proj, so no all_reduce needed
+        # if not kwargs.get("skip_reduction"):
+        #     module.tp_reduce = True
+        module.tp_reduce = False
 
         module.load_local(device)
 

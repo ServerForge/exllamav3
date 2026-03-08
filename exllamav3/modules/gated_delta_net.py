@@ -881,6 +881,7 @@ class GatedDeltaNet(Module):
         key = exported["kwargs"]["key"]
         k_head_dim = exported["kwargs"]["k_head_dim"]
         v_head_dim = exported["kwargs"]["v_head_dim"]
+        hidden_size = exported["kwargs"]["hidden_size"]
         num_v_groups = exported["num_v_groups"]
         device = local_context["device"]
         first, last, unit = plan[key]
@@ -888,12 +889,19 @@ class GatedDeltaNet(Module):
 
         num_k_heads = last - first
         num_v_heads = num_k_heads * num_v_groups
+        num_k_heads_full = len(local_context["active_devices"]) * num_k_heads
 
         k_dim = k_head_dim * num_k_heads
         v_dim = v_head_dim * num_v_heads
 
         fdim_qkvz = 2 * k_dim + 2 * v_dim
         fdim_qkv = 2 * k_dim + v_dim
+
+        # Output dimension split for o_proj (output-split on hidden_size)
+        device_idx = first // num_k_heads  # Which device: 0, 1, 2, 3
+        o_dim_per_device = hidden_size // len(local_context["active_devices"])
+        o_first = device_idx * o_dim_per_device
+        o_last = (device_idx + 1) * o_dim_per_device
 
         qkvz_split = (True, first * (2 * k_head_dim + 2 * v_head_dim * num_v_groups),
                       last * (2 * k_head_dim + 2 * v_head_dim * num_v_groups)) \
@@ -909,7 +917,7 @@ class GatedDeltaNet(Module):
             if num_k_heads else None
         a_split = (True, first * num_v_groups, last * num_v_groups) \
             if num_k_heads else None
-        o_split = (True, first * v_head_dim * num_v_groups, last * v_head_dim * num_v_groups) \
+        o_split = (True, o_first, o_last) \
             if num_k_heads else None
         # Conv operates on mixed_qkv which has fdim_qkv channels per head group
         conv_split = (first * (2 * k_head_dim + v_head_dim * num_v_groups),

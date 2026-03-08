@@ -728,6 +728,10 @@ class GatedDeltaNet(Module):
                     self._all_gather_check = True
 
                 if backend and hasattr(backend, "all_gather"):
+                    if not hasattr(self, "_all_gather_exec_check") and self.layer_idx == 0:
+                        import sys
+                        print(f"[GDN] EXECUTING all_gather path! core_attn_out.shape={core_attn_out.shape}", file=sys.stderr, flush=True)
+                        self._all_gather_exec_check = True
                     # All-gather along head dimension (dim=2)
                     core_attn_out_gathered = params["backend"].all_gather(core_attn_out, dim=2)
                     z_gathered = params["backend"].all_gather(z, dim=2)

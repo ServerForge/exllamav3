@@ -892,8 +892,6 @@ class GatedDeltaNet(Module):
             if num_k_heads else None
         o_split = (False, first * v_head_dim * num_v_groups, last * v_head_dim * num_v_groups) \
             if num_k_heads else None
-        norm_split = (first * v_head_dim * num_v_groups, last * v_head_dim * num_v_groups) \
-            if num_k_heads else None
         # Conv operates on mixed_qkv which has fdim_qkv channels per head group
         conv_split = (first * (2 * k_head_dim + v_head_dim * num_v_groups),
                       last * (2 * k_head_dim + v_head_dim * num_v_groups)) \

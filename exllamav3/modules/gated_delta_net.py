@@ -931,7 +931,7 @@ class GatedDeltaNet(Module):
             b_proj = _import_split("b_proj", b_split),
             a_proj = _import_split("a_proj", a_split),
             o_proj = _import_split("o_proj", o_split),
-            norm = _import_split("norm", norm_split),
+            norm = _import("norm"),
         )
 
         module.device = device

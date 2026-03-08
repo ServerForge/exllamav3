@@ -202,6 +202,14 @@ class Model_LSMixin:
         last_kv_module_idx: int,
         modules: list,
     ):
+        # One-shot diagnostic: print embedding output
+        if not hasattr(self, "_emb_diag_done"):
+            self._emb_diag_done = False
+        if not self._emb_diag_done and not params.get("prefill"):
+            import sys
+            print(f"[LS emb] pre_layer0: norm={x.float().norm().item():.4f} absmax={x.float().abs().max().item():.4f}", file=sys.stderr, flush=True)
+            self._emb_diag_done = True
+
         for idx, module in enumerate(modules):
             if module.caps.get("logits_output") and (num := params.get("last_tokens_only")):
                 x = x[..., -num:, :].contiguous()

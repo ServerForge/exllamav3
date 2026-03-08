@@ -123,6 +123,10 @@ class GatedRMSNorm(Module):
 
     def tp_export(self, plan, producer):
         assert self.device is not None, "Cannot export module for TP before loading."
+        if not hasattr(GatedRMSNorm, "_export_diag_done"):
+            import sys
+            print(f"[GatedRMSNorm export] key={self.key}, weight.shape={self.weight.shape}", file=sys.stderr, flush=True)
+            GatedRMSNorm._export_diag_done = True
         return {
             "cls": GatedRMSNorm,
             "kwargs": {

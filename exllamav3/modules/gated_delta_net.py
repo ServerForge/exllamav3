@@ -712,6 +712,12 @@ class GatedDeltaNet(Module):
                 )
 
             # Norm - per-head normalization (weight is [v_head_dim] not [num_v_heads * v_head_dim])
+            if not hasattr(self, "_gate_diag") and self.layer_idx == 0 and not params.get("prefill") and self.tp_reduce:
+                import sys
+                z_norm = z.float().norm().item()
+                core_norm = core_attn_out.float().norm().item()
+                print(f"[GDN gate] layer={self.layer_idx} z: norm={z_norm:.4f}, core_attn_out: norm={core_norm:.4f}", file=sys.stderr, flush=True)
+                self._gate_diag = True
             core_attn_out = self.norm.forward(core_attn_out, params, gate=z)
 
             core_attn_out = core_attn_out.view(bsz, seqlen, self.num_v_heads * self.v_head_dim)

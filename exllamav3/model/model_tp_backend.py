@@ -371,38 +371,38 @@ class TPBackendNative:
         """
         All-gather operation: concatenate tensors from all devices along specified dimension.
         Each device receives the full concatenated result.
-        Uses gather to each device sequentially.
+        Uses broadcast from each device to all others.
         """
         num_devices = len(self.active_devices)
+        device_idx = self.active_devices.index(self.device)
 
         # Normalize dimension
         if dim < 0:
             dim = tensor.ndim + dim
 
-        # Move gather dimension to last position
-        perm = list(range(tensor.ndim))
-        perm[dim], perm[-1] = perm[-1], perm[dim]
-        tensor_permuted = tensor.permute(perm)
+        # Create list to hold tensors from all devices
+        gathered_tensors = []
 
-        # Get the size along the gather dimension (now last)
-        shape = list(tensor_permuted.shape)
-        local_size = shape[-1]
+        for i in range(num_devices):
+            if i == device_idx:
+                # This device's tensor
+                gathered_tensors.append(tensor)
+            else:
+                # Receive from other device via broadcast
+                # Create empty tensor to receive
+                recv_tensor = torch.empty_like(tensor)
+                # Use broadcast to send from device i to all devices
+                self.broadcast(recv_tensor, self.active_devices[i])
+                gathered_tensors.append(recv_tensor)
 
-        # Create output tensor with concatenated size
-        shape[-1] = local_size * num_devices
-        out_tensor = torch.empty(shape, dtype=tensor.dtype, device=tensor.device)
+        # Broadcast this device's tensor to all others
+        if device_idx < num_devices:
+            self.broadcast(tensor, self.device)
 
-        # Gather from all devices (use list, not tensor)
-        gather_devices = self.active_devices
-        ldims = [local_size] * num_devices
+        # Concatenate along the specified dimension
+        result = torch.cat(gathered_tensors, dim=dim)
 
-        # Use gather to collect all tensors
-        self.gather(tensor_permuted, out_tensor, gather_devices, self.device, ldims)
-
-        # Permute back to original dimension order
-        out_tensor = out_tensor.permute(perm)
-
-        return out_tensor
+        return result
 
 
     def gather(

@@ -107,11 +107,12 @@ class GatedRMSNorm(Module):
         gate: torch.Tensor = None,
     ) -> torch.Tensor:
         # In TP mode, skip RMS normalization to avoid per-device normalization issues
-        # Just apply weight scaling and gating
+        # Only apply weight scaling and gating (restructured approach for TP compatibility)
         if params.get("backend") is not None and hasattr(params["backend"], "active_devices"):
-            # TP mode: skip normalization, just scale and gate
+            import torch.nn.functional as F
+            # Skip normalization, just apply weight and gate
             hidden_states = x * self.weight
-            hidden_states = hidden_states * torch.nn.functional.silu(gate.to(torch.float32))
+            hidden_states = hidden_states * F.silu(gate.to(torch.float32))
             return hidden_states.to(out_dtype or self.out_dtype)
         else:
             # Non-TP mode: normal gated RMS norm

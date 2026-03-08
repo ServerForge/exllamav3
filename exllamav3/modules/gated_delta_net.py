@@ -607,7 +607,7 @@ class GatedDeltaNet(Module):
                 qkvz = self.qkvz_proj.forward(x, params)
                 ba = self.ba_proj.forward(x, params)
 
-                if not hasattr(self, "_qkvz_diag") and not params.get("prefill") and params.get("tp_reduce"):
+                if not hasattr(self, "_qkvz_diag") and self.tp_reduce:
                     import sys
                     qkvz_norm = qkvz.float().norm().item()
                     qkvz_proj_out_features = self.qkvz_proj.out_features if hasattr(self.qkvz_proj, 'out_features') else None

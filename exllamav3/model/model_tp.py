@@ -442,6 +442,14 @@ class Model_TPMixin:
     ):
         self.tp_worker_dispatch(-1, mp_cpu_reduce, ())
 
+        # One-shot diagnostic: check embedding output before prepare_inputs_for_tp
+        if not hasattr(self, "_emb_pre_tp_diag_done"):
+            self._emb_pre_tp_diag_done = False
+        if not self._emb_pre_tp_diag_done and not params.get("prefill"):
+            import sys
+            print(f"[TP parent] pre_prepare: norm={x.float().norm().item():.4f} absmax={x.float().abs().max().item():.4f} shape={tuple(x.shape)}", file=sys.stderr, flush=True)
+            self._emb_pre_tp_diag_done = True
+
         x = self.prepare_inputs_for_tp(x, params)
         for device in self.active_devices:
             self.tp_worker_dispatch(device, mp_model_forward, (

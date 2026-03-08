@@ -729,6 +729,10 @@ class GatedDeltaNet(Module):
 
             core_attn_out = core_attn_out.view(bsz, seqlen, self.num_v_heads * self.v_head_dim)
 
+            # TP: Gather head outputs from all devices before o_proj
+            if self.tp_reduce:
+                core_attn_out = params["backend"].all_gather(core_attn_out, dim=-1)
+
             # Output projection
             x = self.o_proj.forward(core_attn_out, params)
 

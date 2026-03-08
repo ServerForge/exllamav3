@@ -604,6 +604,11 @@ class GatedDeltaNet(Module):
             # packed layout used by fused projections; applying it to split qkv tensors
             # causes incorrect head ordering and broken generations.
             if self.qkvz_proj is not None and self.ba_proj is not None:
+                if not hasattr(self, "_fused_path_diag"):
+                    import sys
+                    print(f"[GDN] Using FUSED path (qkvz_proj), layer={self.layer_idx}, tp_reduce={self.tp_reduce}", file=sys.stderr, flush=True)
+                    self._fused_path_diag = True
+
                 qkvz = self.qkvz_proj.forward(x, params)
                 ba = self.ba_proj.forward(x, params)
 

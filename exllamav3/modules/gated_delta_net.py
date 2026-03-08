@@ -716,7 +716,8 @@ class GatedDeltaNet(Module):
                 import sys
                 z_norm = z.float().norm().item()
                 core_norm = core_attn_out.float().norm().item()
-                print(f"[GDN gate] layer={self.layer_idx} z: norm={z_norm:.4f}, core_attn_out: norm={core_norm:.4f}", file=sys.stderr, flush=True)
+                z_proj_weight_shape = self.z_proj.inner.weight.shape if hasattr(self.z_proj, 'inner') and hasattr(self.z_proj.inner, 'weight') else None
+                print(f"[GDN gate] layer={self.layer_idx} z: norm={z_norm:.4f}, core_attn_out: norm={core_norm:.4f}, z_proj.weight.shape={z_proj_weight_shape}", file=sys.stderr, flush=True)
                 self._gate_diag = True
             core_attn_out = self.norm.forward(core_attn_out, params, gate=z)
 

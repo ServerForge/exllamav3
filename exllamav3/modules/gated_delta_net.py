@@ -716,6 +716,12 @@ class GatedDeltaNet(Module):
 
             core_attn_out = core_attn_out.view(bsz, seqlen, self.num_v_heads * self.v_head_dim)
 
+            if not hasattr(self, "_pre_o_proj_diag") and self.layer_idx == 0 and not params.get("prefill") and self.tp_reduce:
+                import sys
+                pre_o_norm = core_attn_out.float().norm().item()
+                print(f"[GDN pre_o_proj] layer={self.layer_idx} core_attn_out: norm={pre_o_norm:.4f}, shape={core_attn_out.shape}", file=sys.stderr, flush=True)
+                self._pre_o_proj_diag = True
+
             # Output projection
             x = self.o_proj.forward(core_attn_out, params)
 

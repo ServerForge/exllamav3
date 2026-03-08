@@ -581,8 +581,8 @@ class GatedDeltaNet(Module):
             recurrent_state = None
             save_state = False
 
-        # C++ path
-        if self.bc is not None and bsz == 1 and seqlen == 1 and save_state:
+        # C++ path (temporarily disabled for TP debugging)
+        if False and self.bc is not None and bsz == 1 and seqlen == 1 and save_state:
             y = torch.empty_like(x)
             mixed_qkv = self.bc.run_bsz1_a(x)
             mixed_qkv = causal_conv1d_update_function(

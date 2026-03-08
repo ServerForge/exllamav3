@@ -237,10 +237,6 @@ def mp_model_forward(
         mp_model_forward._emb_diag_done = False
 
     for idx, module in enumerate(modules):
-        if not mp_model_forward._emb_diag_done and idx == 0 and not prefill and local_context['device'] == 0:
-            import sys
-            print(f"[TP emb] dev=0 pre_layer0: norm={x.float().norm().item():.4f} absmax={x.float().abs().max().item():.4f}", file=sys.stderr, flush=True)
-            mp_model_forward._emb_diag_done = True
         logits_layer = module.caps.get("logits_output")
         if logits_layer and (num := params.get("last_tokens_only")):
             x = x[..., -num:, :].contiguous()
@@ -264,6 +260,12 @@ def mp_model_forward(
 
         x = module.prepare_for_device(x, params)
         x = module.forward(x, params)
+
+        # Diagnostic after embedding
+        if not mp_model_forward._emb_diag_done and idx == 0 and not prefill and local_context['device'] == 0:
+            import sys
+            print(f"[TP emb] dev=0 post_emb: norm={x.float().norm().item():.4f} absmax={x.float().abs().max().item():.4f} shape={tuple(x.shape)}", file=sys.stderr, flush=True)
+            mp_model_forward._emb_diag_done = True
 
         if not mp_model_forward._hs_diag_done and not prefill and isinstance(module, OutputGather):
             mp_model_forward._hs_diag_done = True

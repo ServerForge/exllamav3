@@ -392,8 +392,8 @@ class TPBackendNative:
         shape[-1] = local_size * num_devices
         out_tensor = torch.empty(shape, dtype=tensor.dtype, device=tensor.device)
 
-        # Gather from all devices
-        gather_devices = torch.tensor(self.active_devices, dtype=torch.int32)
+        # Gather from all devices (use list, not tensor)
+        gather_devices = self.active_devices
         ldims = [local_size] * num_devices
 
         # Use gather to collect all tensors

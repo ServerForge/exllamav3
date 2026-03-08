@@ -624,6 +624,11 @@ class GatedDeltaNet(Module):
                 )
             else:
                 # TODO: Bound class and/or graph for this part
+                if not hasattr(self, "_x_diag") and self.layer_idx == 0 and not params.get("prefill") and params.get("tp_reduce"):
+                    import sys
+                    x_norm = x.float().norm().item()
+                    print(f"[GDN input] layer={self.layer_idx} x (input to z_proj): norm={x_norm:.4f}, shape={x.shape}", file=sys.stderr, flush=True)
+                    self._x_diag = True
                 qkv = self.qkv_proj.forward(x, params)
                 z = self.z_proj.forward(x, params).view(bsz, seqlen, self.num_v_heads, self.v_head_dim)
                 b = self.b_proj.forward(x, params)

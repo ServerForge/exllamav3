@@ -904,7 +904,7 @@ class GatedDeltaNet(Module):
         qkv_split = (True, first * (2 * k_head_dim + v_head_dim * num_v_groups),
                      last * (2 * k_head_dim + v_head_dim * num_v_groups)) \
             if num_k_heads else None
-        z_split = (True, first * v_head_dim * num_v_groups, last * v_head_dim * num_v_groups) \
+        z_split = (True, first * v_head_dim, last * v_head_dim) \
             if num_k_heads else None
         ba_split = (True, first * 2 * num_v_groups, last * 2 * num_v_groups) \
             if num_k_heads else None

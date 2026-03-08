@@ -712,7 +712,21 @@ class GatedDeltaNet(Module):
                 )
 
             # Norm
+            if not hasattr(self, "_gdn_norm_diag_done"):
+                self._gdn_norm_diag_done = False
+            if not self._gdn_norm_diag_done and self.layer_idx == 0 and not params.get("prefill"):
+                import sys
+                pre_norm = core_attn_out.float().norm().item()
+                print(f"[GDN diag] layer={self.layer_idx} pre_norm: norm={pre_norm:.4f}", file=sys.stderr, flush=True)
+
             core_attn_out = self.norm.forward(core_attn_out, params, gate = z)
+
+            if not self._gdn_norm_diag_done and self.layer_idx == 0 and not params.get("prefill"):
+                import sys
+                post_norm = core_attn_out.float().norm().item()
+                print(f"[GDN diag] layer={self.layer_idx} post_norm: norm={post_norm:.4f}", file=sys.stderr, flush=True)
+                self._gdn_norm_diag_done = True
+
             core_attn_out = core_attn_out.view(bsz, seqlen, self.num_v_heads * self.v_head_dim)
 
             # Output projection

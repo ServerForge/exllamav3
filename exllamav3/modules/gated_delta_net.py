@@ -741,9 +741,11 @@ class GatedDeltaNet(Module):
             else:
                 rs.positions = [r + seqlen for r in rs.positions]
 
-        # TP reduction
-        if self.tp_reduce:
-            params["backend"].all_reduce(x)
+        # TP reduction: GDN outputs are per-head and should NOT be summed.
+        # The o_proj is input-split and will handle the all_reduce.
+        # Removing this incorrect all_reduce that was summing independent head outputs.
+        # if self.tp_reduce:
+        #     params["backend"].all_reduce(x)
 
         return to2(x, out_dtype, self.out_dtype)
 

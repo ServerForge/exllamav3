@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 from typing_extensions import override
 import torch
 import torch.nn.functional as F
@@ -1051,7 +1051,13 @@ class GatedDeltaNet(Module):
             cq = conv1d_weight[q_split[1] : q_split[2], ...]
             c_k = conv1d_weight[q_full_dim + k_split[1] : q_full_dim + k_split[2], ...]
             c_v = conv1d_weight[q_full_dim + k_full_dim + v_split[1] : q_full_dim + k_full_dim + v_split[2], ...]
-            module.conv1d_weight = torch.cat([cq, c_k, c_v], dim = 0).contiguous()
+            
+            orig_shape = cq.shape[1:]
+            cq = cq.view(num_k_heads, k_head_dim, *orig_shape)
+            c_k = c_k.view(num_k_heads, k_head_dim, *orig_shape)
+            c_v = c_v.view(num_k_heads, num_v_groups * v_head_dim, *orig_shape)
+            
+            module.conv1d_weight = torch.cat([cq, c_k, c_v], dim=1).view(-1, *orig_shape).contiguous()
         else:
             module.conv1d_weight = conv1d_weight
 
@@ -1060,7 +1066,12 @@ class GatedDeltaNet(Module):
             cb_q = conv1d_bias[q_split[1] : q_split[2]]
             cb_k = conv1d_bias[q_full_dim + k_split[1] : q_full_dim + k_split[2]]
             cb_v = conv1d_bias[q_full_dim + k_full_dim + v_split[1] : q_full_dim + k_full_dim + v_split[2]]
-            module.conv1d_bias = torch.cat([cb_q, cb_k, cb_v], dim = 0).contiguous()
+            
+            cb_q = cb_q.view(num_k_heads, k_head_dim)
+            cb_k = cb_k.view(num_k_heads, k_head_dim)
+            cb_v = cb_v.view(num_k_heads, num_v_groups * v_head_dim)
+            
+            module.conv1d_bias = torch.cat([cb_q, cb_k, cb_v], dim=1).view(-1).contiguous()
         else:
             module.conv1d_bias = conv1d_bias
 

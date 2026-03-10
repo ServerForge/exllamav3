@@ -235,8 +235,8 @@ class LinearEXL3:
         else:
             suh = consumer.recv(id_suh, cuda = True, slice_dim = 0, first = first, last = last)
             svh = consumer.recv(id_svh, cuda = True)
-            trellis = consumer.recv(id_trellis, cuda = True, slice_dim = 0, first = first // 16, last = last // 16)
-            bias = consumer.recv(id_bias, cuda = True)
+            trellis = consumer.recv(id_trellis, cuda = True, slice_dim = 0, first = first, last = last)
+            bias = consumer.recv(id_bias, cuda = True) if (first == 0) else None
             in_features = last - first
             out_features = exported["out_features"]
 

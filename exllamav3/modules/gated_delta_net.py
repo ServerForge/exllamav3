@@ -715,6 +715,15 @@ class GatedDeltaNet(Module):
             # Use chunked rule when advantageous and available
             # TODO: At least warn if chunked rule (i.e. flash-linear-attention) is not available
             #       since performance will tank on prompt ingestion
+
+            if not hasattr(self, "_post_conv_diag") and self.layer_idx <= 1 and self.tp_reduce:
+                import sys
+                conv_norm = mixed_qkv.float().norm().item()
+                beta_norm = beta.float().norm().item() if beta is not None else 0.0
+                g_norm = g.float().norm().item() if g is not None else 0.0
+                print(f"[GDN post_conv] layer={self.layer_idx} mixed_qkv: norm={conv_norm:.4f}, shape={mixed_qkv.shape}, beta: norm={beta_norm:.4f}, g: norm={g_norm:.4f}", file=sys.stderr, flush=True)
+                self._post_conv_diag = True
+
             if seqlen >= self.num_v_heads and chunk_gated_delta_rule is not None:
                 mixed_qkv = mixed_qkv.transpose(1, 2)
 
@@ -736,6 +745,12 @@ class GatedDeltaNet(Module):
                     output_final_state = save_state,
                     use_qk_l2norm_in_kernel = True,
                 )
+
+                if not hasattr(self, "_post_delta_diag") and self.layer_idx <= 1 and self.tp_reduce:
+                    import sys
+                    delta_norm = core_attn_out.float().norm().item()
+                    print(f"[GDN post_delta] layer={self.layer_idx} core_attn_out: norm={delta_norm:.4f}, shape={core_attn_out.shape}", file=sys.stderr, flush=True)
+                    self._post_delta_diag = True
 
             else:
                 core_attn_out = torch.empty(
@@ -764,7 +779,7 @@ class GatedDeltaNet(Module):
                 )
 
             # Norm - per-head normalization (weight is [v_head_dim] not [num_v_heads * v_head_dim])
-            if not hasattr(self, "_gate_diag") and self.layer_idx == 0 and not params.get("prefill") and self.tp_reduce:
+            if not hasattr(self, "_gate_diag") and self.layer_idx <= 1 and not params.get("prefill") and self.tp_reduce:
                 import sys
                 z_norm = z.float().norm().item()
                 core_norm = core_attn_out.float().norm().item()
@@ -776,7 +791,7 @@ class GatedDeltaNet(Module):
 
             core_attn_out = core_attn_out.view(bsz, seqlen, self.num_v_heads * self.v_head_dim)
 
-            if not hasattr(self, "_pre_o_proj_diag") and self.layer_idx == 0 and not params.get("prefill") and self.tp_reduce:
+            if not hasattr(self, "_pre_o_proj_diag") and self.layer_idx <= 1 and not params.get("prefill") and self.tp_reduce:
                 import sys
                 pre_o_norm = core_attn_out.float().norm().item()
                 print(f"[GDN pre_o_proj] layer={self.layer_idx} core_attn_out: norm={pre_o_norm:.4f}, shape={core_attn_out.shape}", file=sys.stderr, flush=True)
@@ -785,7 +800,7 @@ class GatedDeltaNet(Module):
             # Output projection
             x = self.o_proj.forward(core_attn_out, params)
 
-            if not hasattr(self, "_o_proj_diag") and self.layer_idx == 0 and not params.get("prefill") and self.tp_reduce:
+            if not hasattr(self, "_o_proj_diag") and self.layer_idx <= 1 and not params.get("prefill") and self.tp_reduce:
                 import sys
                 pre_reduce_norm = x.float().norm().item()
                 print(f"[GDN o_proj] layer={self.layer_idx} pre_all_reduce: norm={pre_reduce_norm:.4f}", file=sys.stderr, flush=True)

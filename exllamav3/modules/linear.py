@@ -233,19 +233,33 @@ class Linear(Module):
         )
 
     def load_exl3(self, key: str) -> bool:
-        if not self.is_exl3_storage(key):
+        load_key = key
+        is_fused = False
+        if self.fkey and self.is_exl3_storage(self.fkey) and self.frange is not None:
+            load_key = self.fkey
+            is_fused = True
+        elif not self.is_exl3_storage(load_key):
             return False
+
         self.used_alt_key = key == self.alt_key
-        scale = self.config.stc.get_tensor(key + ".scale", self.device, optional = True)
-        su = self.config.stc.get_tensor(key + ".su", self.device, optional = True, no_defer = True)
-        suh = self.config.stc.get_tensor(key + ".suh", self.device, optional = True)
-        sv = self.config.stc.get_tensor(key + ".sv", self.device, optional = True, no_defer = True)
-        svh = self.config.stc.get_tensor(key + ".svh", self.device, optional = True)
-        trellis = self.config.stc.get_tensor(key + ".trellis", self.device)
+        scale = self.config.stc.get_tensor(load_key + ".scale", self.device, optional = True)
+        su = self.config.stc.get_tensor(load_key + ".su", self.device, optional = True, no_defer = is_fused)
+        suh = self.config.stc.get_tensor(load_key + ".suh", self.device, optional = True, no_defer = is_fused)
+        sv = self.config.stc.get_tensor(load_key + ".sv", self.device, optional = True, no_defer = is_fused)
+        svh = self.config.stc.get_tensor(load_key + ".svh", self.device, optional = True, no_defer = is_fused)
+        trellis = self.config.stc.get_tensor(load_key + ".trellis", self.device, no_defer = is_fused)
         # TODO: We technically don't need to load these unless we need to save the tensors later
-        mcg = self.config.stc.get_tensor(key + ".mcg", "cpu", optional = True)
-        mul1 = self.config.stc.get_tensor(key + ".mul1", "cpu", optional = True)
-        bias = self.config.stc.get_tensor(key + ".bias", self.device, optional = True)
+        mcg = self.config.stc.get_tensor(load_key + ".mcg", "cpu", optional = True, no_defer = is_fused)
+        mul1 = self.config.stc.get_tensor(load_key + ".mul1", "cpu", optional = True, no_defer = is_fused)
+        bias = self.config.stc.get_tensor(load_key + ".bias", self.device, optional = True, no_defer = is_fused)
+
+        if is_fused:
+            f0, f1 = self.frange
+            if sv is not None: sv = sv[f0:f1].contiguous()
+            if svh is not None: svh = svh[f0:f1].contiguous()
+            if trellis is not None: trellis = trellis[:, f0 // 16 : f1 // 16, :].contiguous()
+            if bias is not None: bias = bias[f0:f1].contiguous()
+
         self.inner = LinearEXL3(
             self.config,
             self.in_features,
@@ -426,6 +440,15 @@ class Linear(Module):
         # alt_key is only used when loading unquantized model
         if self.is_exl3_storage(self.key):
             return sum(self.config.stc.get_tensor_sizes(prefix = self.key))
+        elif self.fkey and self.is_exl3_storage(self.fkey):
+            # Scale proportionally based on output features if sliced
+            size_fused = sum(self.config.stc.get_tensor_sizes(prefix = self.fkey))
+            # Assume full_out_features logic
+            total_out = self.full_out_features if hasattr(self, "full_out_features") and self.full_out_features else self.out_features
+            if self.frange:
+                total_out = self.full_out_features if self.full_out_features else (self.frange[1] - self.frange[0]) # Approximation
+                return size_fused * (self.frange[1] - self.frange[0]) // total_out
+            return size_fused
         else:
             return 2 * self.in_features * self.out_features
     def storage_size(self):

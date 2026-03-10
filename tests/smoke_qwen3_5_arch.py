@@ -42,7 +42,7 @@ def main() -> None:
 
     # Verify split projection path exists for linear attention blocks
     first_block = model.modules[model.first_block_idx]
-    if not hasattr(first_block.attn, "qkv_proj") and not hasattr(first_block.attn, "qkvz_proj"):
+    if not hasattr(first_block.attn, "q_proj") and not hasattr(first_block.attn, "qkv_proj") and not hasattr(first_block.attn, "qkvz_proj"):
         fail("Expected Qwen3.5 linear attention projection attributes not found")
 
     if not torch.cuda.is_available():

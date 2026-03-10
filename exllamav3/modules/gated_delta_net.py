@@ -294,7 +294,9 @@ class GatedDeltaNet(Module):
         qmap: str | None = None,
         out_dtype: torch.dtype | None = None,
         qkvz_proj: Linear | None = None,
-        qkv_proj: Linear | None = None,
+        q_proj: Linear | None = None,
+        k_proj: Linear | None = None,
+        v_proj: Linear | None = None,
         z_proj: Linear | None = None,
         ba_proj: Linear | None = None,
         b_proj: Linear | None = None,
@@ -339,19 +341,34 @@ class GatedDeltaNet(Module):
         else:
             self.qkvz_proj = None
 
-        if qkv_proj is not None:
-            self.qkv_proj = qkv_proj
+        if q_proj is not None:
+            self.q_proj = q_proj
+            self.k_proj = k_proj
+            self.v_proj = v_proj
             self.z_proj = z_proj
-            self.register_submodule(self.qkv_proj)
+            self.register_submodule(self.q_proj)
+            self.register_submodule(self.k_proj)
+            self.register_submodule(self.v_proj)
             if self.z_proj is not None:
                 self.register_submodule(self.z_proj)
         elif key_qkv:
-            self.qkv_proj = Linear(config, f"{key}.{key_qkv}", hidden_size, self.fdim_qkv, qmap = qmap + ".input", out_dtype = torch.float)
+            fkey = f"{key}.{key_qkv}"
+            frange_q = (0, self.num_k_heads * self.k_head_dim)
+            frange_k = (frange_q[1], frange_q[1] + self.num_k_heads * self.k_head_dim)
+            frange_v = (frange_k[1], frange_k[1] + self.num_v_heads * self.v_head_dim)
+            
+            self.q_proj = Linear(config, f"{key}.q_proj", hidden_size, self.num_k_heads * self.k_head_dim, fkey=fkey, frange=frange_q, qmap = qmap + ".input", out_dtype = torch.float)
+            self.k_proj = Linear(config, f"{key}.k_proj", hidden_size, self.num_k_heads * self.k_head_dim, fkey=fkey, frange=frange_k, qmap = qmap + ".input", out_dtype = torch.float)
+            self.v_proj = Linear(config, f"{key}.v_proj", hidden_size, self.num_v_heads * self.v_head_dim, fkey=fkey, frange=frange_v, qmap = qmap + ".input", out_dtype = torch.float)
             self.z_proj = Linear(config, f"{key}.{key_z}", hidden_size, self.v_dim, qmap = qmap + ".input", out_dtype = torch.float)
-            self.register_submodule(self.qkv_proj)
+            self.register_submodule(self.q_proj)
+            self.register_submodule(self.k_proj)
+            self.register_submodule(self.v_proj)
             self.register_submodule(self.z_proj)
         else:
-            self.qkv_proj = None
+            self.q_proj = None
+            self.k_proj = None
+            self.v_proj = None
             self.z_proj = None
 
         if ba_proj is not None:
@@ -425,8 +442,12 @@ class GatedDeltaNet(Module):
             return [[self.qkvz_proj.optimizer_targets()]]
 
         targets = []
-        if self.qkv_proj is not None:
-            targets += self.qkv_proj.optimizer_targets()
+        if self.q_proj is not None:
+            targets += self.q_proj.optimizer_targets()
+        if self.k_proj is not None:
+            targets += self.k_proj.optimizer_targets()
+        if self.v_proj is not None:
+            targets += self.v_proj.optimizer_targets()
         if self.z_proj is not None:
             targets += self.z_proj.optimizer_targets()
         return [targets]
@@ -645,7 +666,9 @@ class GatedDeltaNet(Module):
                 if self.tp_reduce:
                     params["tp_reduce"] = True
 
-                qkv = self.qkv_proj.forward(x, params)
+                q = self.q_proj.forward(x, params)
+                k = self.k_proj.forward(x, params)
+                v = self.v_proj.forward(x, params)
                 z_raw = self.z_proj.forward(x, params)
 
                 if not hasattr(self, "_z_raw_diag") and self.tp_reduce:
@@ -658,7 +681,7 @@ class GatedDeltaNet(Module):
                 b = self.b_proj.forward(x, params)
                 a = self.a_proj.forward(x, params)
 
-                mixed_qkv = qkv.transpose(1, 2).to(torch.bfloat16).contiguous()
+                mixed_qkv = torch.cat((q, k, v), dim = -1).transpose(1, 2).to(torch.bfloat16).contiguous()
 
                 beta = torch.empty((bsz, seqlen, self.num_v_heads), dtype = torch.bfloat16, device = self.device)
                 g = torch.empty((bsz, seqlen, self.num_v_heads), dtype = torch.float, device = self.device)
@@ -808,8 +831,12 @@ class GatedDeltaNet(Module):
         storage = 0
         if self.qkvz_proj is not None:
             storage += self.qkvz_proj.storage_size()
-        if self.qkv_proj is not None:
-            storage += self.qkv_proj.storage_size()
+        if self.q_proj is not None:
+            storage += self.q_proj.storage_size()
+        if self.k_proj is not None:
+            storage += self.k_proj.storage_size()
+        if self.v_proj is not None:
+            storage += self.v_proj.storage_size()
         if self.z_proj is not None:
             storage += self.z_proj.storage_size()
         if self.ba_proj is not None:
@@ -833,8 +860,12 @@ class GatedDeltaNet(Module):
         recons_list = [self.o_proj.recons_size()]
         if self.qkvz_proj is not None:
             recons_list.append(self.qkvz_proj.recons_size())
-        if self.qkv_proj is not None:
-            recons_list.append(self.qkv_proj.recons_size())
+        if self.q_proj is not None:
+            recons_list.append(self.q_proj.recons_size())
+        if self.k_proj is not None:
+            recons_list.append(self.k_proj.recons_size())
+        if self.v_proj is not None:
+            recons_list.append(self.v_proj.recons_size())
         if self.z_proj is not None:
             recons_list.append(self.z_proj.recons_size())
         recons = max(recons_list)
@@ -888,7 +919,9 @@ class GatedDeltaNet(Module):
             "num_v_groups": self.num_v_groups,
             **{name: _export(getattr(self, name, None)) for name in (
                 "qkvz_proj",
-                "qkv_proj",
+                "q_proj",
+                "k_proj",
+                "v_proj",
                 "z_proj",
                 "ba_proj",
                 "b_proj",
@@ -933,11 +966,17 @@ class GatedDeltaNet(Module):
         fdim_qkvz = 2 * k_dim + 2 * v_dim
         fdim_qkv = 2 * k_dim + v_dim
 
+        q_full_dim = num_k_heads_full * k_head_dim
+        k_full_dim = num_k_heads_full * k_head_dim
+
         qkvz_split = (True, first * (2 * k_head_dim + 2 * v_head_dim * num_v_groups),
                       last * (2 * k_head_dim + 2 * v_head_dim * num_v_groups)) \
             if num_k_heads else None
-        qkv_split = (True, first * (2 * k_head_dim + v_head_dim * num_v_groups),
-                     last * (2 * k_head_dim + v_head_dim * num_v_groups)) \
+        q_split = (True, first * k_head_dim, last * k_head_dim) \
+            if num_k_heads else None
+        k_split = (True, first * k_head_dim, last * k_head_dim) \
+            if num_k_heads else None
+        v_split = (True, first * v_head_dim * num_v_groups, last * v_head_dim * num_v_groups) \
             if num_k_heads else None
         z_split = (True, first * v_head_dim * num_v_groups, last * v_head_dim * num_v_groups) \
             if num_k_heads else None
@@ -950,10 +989,6 @@ class GatedDeltaNet(Module):
         # o_proj is input-split: each device gets a slice of the input dimension (rows of weight matrix)
         # matching its partial head outputs (num_v_heads * v_head_dim per device)
         o_split = (False, first * v_head_dim * num_v_groups, last * v_head_dim * num_v_groups) \
-            if num_k_heads else None
-        # Conv operates on mixed_qkv which has fdim_qkv channels per head group
-        conv_split = (first * (2 * k_head_dim + v_head_dim * num_v_groups),
-                      last * (2 * k_head_dim + v_head_dim * num_v_groups)) \
             if num_k_heads else None
 
         def _import(name):
@@ -982,7 +1017,9 @@ class GatedDeltaNet(Module):
             conv_kernel_size = kwargs["conv_kernel_size"],
             out_dtype = kwargs.get("out_dtype"),
             qkvz_proj = _import_split("qkvz_proj", qkvz_split),
-            qkv_proj = _import_split("qkv_proj", qkv_split),
+            q_proj = _import_split("q_proj", q_split),
+            k_proj = _import_split("k_proj", k_split),
+            v_proj = _import_split("v_proj", v_split),
             z_proj = _import_split("z_proj", z_split),
             ba_proj = _import_split("ba_proj", ba_split),
             b_proj = _import_split("b_proj", b_split),
@@ -1010,14 +1047,20 @@ class GatedDeltaNet(Module):
             module.a_log = a_log_full
 
         conv1d_weight = consumer.recv(exported["conv1d_weight"], cuda = True)
-        if conv_split and conv1d_weight is not None:
-            module.conv1d_weight = conv1d_weight[conv_split[0]:conv_split[1], :].contiguous()
+        if num_k_heads and conv1d_weight is not None:
+            cq = conv1d_weight[q_split[1] : q_split[2], ...]
+            c_k = conv1d_weight[q_full_dim + k_split[1] : q_full_dim + k_split[2], ...]
+            c_v = conv1d_weight[q_full_dim + k_full_dim + v_split[1] : q_full_dim + k_full_dim + v_split[2], ...]
+            module.conv1d_weight = torch.cat([cq, c_k, c_v], dim = 0).contiguous()
         else:
             module.conv1d_weight = conv1d_weight
 
         conv1d_bias = consumer.recv(exported["conv1d_bias"], cuda = True)
-        if conv_split and conv1d_bias is not None:
-            module.conv1d_bias = conv1d_bias[conv_split[0]:conv_split[1]].contiguous()
+        if num_k_heads and conv1d_bias is not None:
+            cb_q = conv1d_bias[q_split[1] : q_split[2]]
+            cb_k = conv1d_bias[q_full_dim + k_split[1] : q_full_dim + k_split[2]]
+            cb_v = conv1d_bias[q_full_dim + k_full_dim + v_split[1] : q_full_dim + k_full_dim + v_split[2]]
+            module.conv1d_bias = torch.cat([cb_q, cb_k, cb_v], dim = 0).contiguous()
         else:
             module.conv1d_bias = conv1d_bias
 

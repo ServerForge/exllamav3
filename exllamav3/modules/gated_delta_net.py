@@ -724,7 +724,7 @@ class GatedDeltaNet(Module):
                 print(f"[GDN post_conv] layer={self.layer_idx} mixed_qkv: norm={conv_norm:.4f}, shape={mixed_qkv.shape}, beta: norm={beta_norm:.4f}, g: norm={g_norm:.4f}", file=sys.stderr, flush=True)
                 self._post_conv_diag = True
 
-            if seqlen >= self.num_v_heads and chunk_gated_delta_rule is not None:
+            if seqlen >= self.num_v_heads and chunk_gated_delta_rule is not None and not self.tp_reduce:
                 mixed_qkv = mixed_qkv.transpose(1, 2)
 
                 q, k, v = torch.split(mixed_qkv, [self.k_dim, self.k_dim, self.v_dim], dim = -1)

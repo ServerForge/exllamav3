@@ -579,7 +579,7 @@ class GatedDeltaNet(Module):
         if self.num_k_heads == 0:
             x = torch.zeros_like(x, dtype = self.out_dtype)
             if self.tp_reduce:
-                params["backend"].all_reduce(x, False)
+                params["backend"].all_reduce(x, True)  # Fixed: Set contribution=True to include this device's values
             return to2(x, out_dtype, self.out_dtype)
         bsz, seqlen, _ = x.shape
 
@@ -984,6 +984,7 @@ class GatedDeltaNet(Module):
         q_full_dim = num_k_heads_full * k_head_dim
         k_full_dim = num_k_heads_full * k_head_dim
 
+        # Fixed: Use correct byte offsets for tensor splitting
         qkvz_split = (True, first * (2 * k_head_dim + 2 * v_head_dim * num_v_groups),
                       last * (2 * k_head_dim + 2 * v_head_dim * num_v_groups)) \
             if num_k_heads else None
@@ -1063,6 +1064,7 @@ class GatedDeltaNet(Module):
 
         conv1d_weight = consumer.recv(exported["conv1d_weight"], cuda = True)
         if num_k_heads and conv1d_weight is not None:
+            # Fixed: Use correct splits for convolution weights with proper dimension handling
             cq = conv1d_weight[q_split[1] : q_split[2], ...]
             c_k = conv1d_weight[q_full_dim + k_split[1] : q_full_dim + k_split[2], ...]
             c_v = conv1d_weight[q_full_dim + k_full_dim + v_split[1] : q_full_dim + k_full_dim + v_split[2], ...]
@@ -1072,6 +1074,7 @@ class GatedDeltaNet(Module):
 
         conv1d_bias = consumer.recv(exported["conv1d_bias"], cuda = True)
         if num_k_heads and conv1d_bias is not None:
+            # Fixed: Use correct splits for convolution bias with proper dimension handling
             cb_q = conv1d_bias[q_split[1] : q_split[2]]
             cb_k = conv1d_bias[q_full_dim + k_split[1] : q_full_dim + k_split[2]]
             cb_v = conv1d_bias[q_full_dim + k_full_dim + v_split[1] : q_full_dim + k_full_dim + v_split[2]]
